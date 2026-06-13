@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HUBBLE — Best LLMs Index</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="iso-bg" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="mark">
+        <svg viewBox="0 0 44 44" width="36" height="36" aria-hidden="true">
+          <polygon points="6,30 16,26 30,33 22,37" fill="none" stroke="currentColor" stroke-width="1.3"/>
+          <line x1="11" y1="28" x2="26" y2="35" stroke="currentColor" stroke-width="1" opacity=".5"/>
+          <line x1="19" y1="35" x2="14" y2="43" stroke="currentColor" stroke-width="1.2"/>
+          <line x1="21" y1="35" x2="26" y2="43" stroke="currentColor" stroke-width="1.2"/>
+          <circle cx="32" cy="13" r="2" fill="currentColor"/>
+          <line x1="30" y1="33" x2="32" y2="15" stroke="currentColor" stroke-width="1.3"/>
+          <line x1="32" y1="13" x2="40" y2="9" stroke="currentColor" stroke-width="1" opacity=".5"/>
+          <line x1="32" y1="13" x2="39" y2="16" stroke="currentColor" stroke-width="1" opacity=".5"/>
+        </svg>
+      </div>
+      <div class="brand-txt">
+        <h1>HUBBLE</h1>
+        <p class="tag">CONSOLIDATED LLM INDEX · HUGGINGFACE · OPENROUTER · BENCHMARKS · ARENA</p>
+        <nav class="tabs" id="tabs">
+          <button class="tab active" data-view="index">INDEX</button>
+          <button class="tab" data-view="fit">HARDWARE FIT</button>
+          <button class="tab" data-view="feed">WHAT'S NEW</button>
+        </nav>
+      </div>
+    </div>
+    <div class="actions">
+      <div class="readout" id="freshness">— · — · —</div>
+      <button id="refresh" class="btn">↻ REFRESH</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ════════════ INDEX VIEW ════════════ -->
+    <div class="view" id="view-index">
+      <section class="podium-section">
+        <div class="section-label"><span>01</span> TOP RANKED · BLENDED SCORE</div>
+        <div id="podium" class="podium"></div>
+      </section>
+
+      <section class="controls">
+        <div class="section-label"><span>02</span> WEIGHTING MATRIX</div>
+        <div class="control-row">
+          <div class="field">
+            <span class="field-mark">⌕</span>
+            <input id="search" class="search" type="text" placeholder="FILTER MODELS" autocomplete="off" />
+          </div>
+          <label class="chk"><input type="checkbox" id="hide-noise" checked /><span>CHAT MODELS ONLY</span></label>
+          <label class="chk"><input type="checkbox" id="scored-only" /><span>SCORED ONLY</span></label>
+          <span class="spacer"></span>
+          <button id="reset-weights" class="btn ghost">RESET</button>
+        </div>
+        <div class="weights" id="weights"></div>
+      </section>
+
+      <section class="table-section">
+        <div class="section-label"><span>03</span> FULL INDEX</div>
+        <div class="table-wrap">
+          <table id="table">
+            <thead>
+              <tr>
+                <th data-sort="rank">#</th>
+                <th data-sort="name" class="left">MODEL</th>
+                <th data-sort="score">SCORE</th>
+                <th data-sort="intelligence_index">INTL</th>
+                <th data-sort="coding_index">CODE</th>
+                <th data-sort="agentic_index">AGNT</th>
+                <th data-sort="arena_elo">ARENA</th>
+                <th data-sort="usage_rank">USAGE</th>
+                <th data-sort="downloads">DOWNLOADS</th>
+                <th data-sort="likes">LIKES</th>
+                <th data-sort="price_completion">$/MTOK</th>
+                <th>SRC</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <p id="status" class="status"></p>
+      </section>
+    </div>
+
+    <!-- ════════════ HARDWARE FIT VIEW ════════════ -->
+    <div class="view" id="view-fit" hidden>
+      <section>
+        <div class="section-label"><span>★</span> HARDWARE FIT · BEST LOCAL MODELS FOR YOUR RIG</div>
+        <div class="fit-form">
+          <label class="fld">GPU PRESET
+            <select id="fit-gpu"></select>
+          </label>
+          <label class="fld">VRAM · GB
+            <input id="fit-vram" type="number" min="0" step="1" value="24" />
+          </label>
+          <label class="fld">SYSTEM RAM · GB
+            <input id="fit-ram" type="number" min="0" step="1" value="32" />
+          </label>
+          <label class="fld">QUANT
+            <select id="fit-quant">
+              <option value="q4">Q4 · 4-bit (recommended)</option>
+              <option value="q8">Q8 · 8-bit</option>
+              <option value="fp16">FP16 · full</option>
+            </select>
+          </label>
+          <label class="fld">OPTIMISE FOR
+            <select id="fit-use">
+              <option value="score">BEST OVERALL</option>
+              <option value="coding_index">CODING</option>
+              <option value="agentic_index">AGENTIC</option>
+              <option value="intelligence_index">RAW INTELLIGENCE</option>
+            </select>
+          </label>
+        </div>
+        <div id="fit-summary" class="fit-summary"></div>
+        <div class="table-wrap">
+          <table id="fit-table">
+            <thead>
+              <tr>
+                <th class="left">FIT</th>
+                <th class="left">MODEL</th>
+                <th>PARAMS</th>
+                <th>EST. VRAM</th>
+                <th>SCORE</th>
+                <th>INTL</th>
+                <th>CODE</th>
+                <th>AGNT</th>
+                <th class="left">NOTE</th>
+              </tr>
+            </thead>
+            <tbody id="fit-rows"></tbody>
+          </table>
+        </div>
+        <p class="status" id="fit-status"></p>
+      </section>
+    </div>
+
+    <!-- ════════════ WHAT'S NEW VIEW ════════════ -->
+    <div class="view" id="view-feed" hidden>
+      <section class="feed-section">
+        <div class="section-label"><span>00</span> WHAT'S NEW · DETECTED EVENTS</div>
+        <div id="feed" class="feed"></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
