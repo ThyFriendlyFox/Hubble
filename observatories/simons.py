@@ -21,24 +21,10 @@ Latency note: FRED daily series publish with a 1-2 business day lag, and the
 monthly series (CPI, unemployment) lag by weeks. Simons sees the recent past
 clearly; it is a positioning instrument, not a trading signal.
 """
-import statistics
-from dataclasses import dataclass
-
 from telescope import Column, Signal, Telescope
 from telescope.events import ClimberRule, NewLeaderRule, ThresholdRule
-from telescope.http import get_json, get_text
 from telescope.registry import register
-
-
-@dataclass(frozen=True)
-class Series:
-    key: str
-    name: str
-    group: str
-    unit: str          # "pct" (rates/spreads) | "price" | "index"
-    source: str        # fred | yahoo | coingecko
-    ident: str
-    invert: bool = False   # True when "up" is risk-off (e.g. spreads)
+from telescope.series import Series, change, fetch_panel
 
 
 # The instrument panel. Deliberately broad but small enough to read at a glance.
@@ -53,12 +39,13 @@ SERIES = (
     Series("dfii10", "10Y Real Yield", "RATES", "pct", "fred", "DFII10"),
     Series("mortgage30us", "30Y Mortgage", "RATES", "pct", "fred", "MORTGAGE30US"),
     # ── credit ───────────────────────────────────────────────────────────
-    Series("hy_oas", "High Yield OAS", "CREDIT", "pct", "fred",
-           "BAMLH0A0HYM2", invert=True),
-    Series("ig_oas", "Inv Grade OAS", "CREDIT", "pct", "fred",
-           "BAMLC0A0CM", invert=True),
+    Series("hy_oas", "High Yield OAS", "CREDIT", "pct", "fred", "BAMLH0A0HYM2",
+           note="wider = risk-off"),
+    Series("ig_oas", "Inv Grade OAS", "CREDIT", "pct", "fred", "BAMLC0A0CM",
+           note="wider = risk-off"),
     # ── risk & dollar ────────────────────────────────────────────────────
-    Series("vix", "VIX", "RISK", "index", "fred", "VIXCLS", invert=True),
+    Series("vix", "VIX", "RISK", "index", "fred", "VIXCLS",
+           note="higher = risk-off"),
     Series("dxy", "Dollar Index", "RISK", "index", "fred", "DTWEXBGS"),
     Series("wti", "WTI Crude", "COMMODITY", "price", "fred", "DCOILWTICO"),
     # ── equities & duration (ETF proxies) ────────────────────────────────
@@ -72,134 +59,6 @@ SERIES = (
     Series("btc", "Bitcoin", "CRYPTO", "price", "coingecko", "bitcoin"),
     Series("eth", "Ethereum", "CRYPTO", "price", "coingecko", "ethereum"),
 )
-
-TRADING_DAYS = {"1m": 21, "3m": 63, "12m": 252}
-
-
-def _pct(v):
-    return None if v is None else f"{v:+.1f}%"
-
-
-# ── source adapters: each returns a list of (date, value), oldest first ──
-def _fred_series(ident):
-    text = get_text(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={ident}")
-    out = []
-    for line in text.splitlines()[1:]:
-        parts = line.split(",")
-        if len(parts) < 2:
-            continue
-        date, raw = parts[0].strip(), parts[1].strip()
-        if raw in (".", "", "NA"):   # FRED marks holidays/missing with "."
-            continue
-        try:
-            out.append((date, float(raw)))
-        except ValueError:
-            continue
-    return out
-
-
-def _yahoo_series(ident):
-    data = get_json(
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{ident}"
-        "?range=5y&interval=1d"
-    )
-    res = (data.get("chart") or {}).get("result") or []
-    if not res:
-        return []
-    r = res[0]
-    stamps = r.get("timestamp") or []
-    closes = ((r.get("indicators") or {}).get("quote") or [{}])[0].get("close") or []
-    import datetime as dt
-    out = []
-    for ts, c in zip(stamps, closes):
-        if c is None:
-            continue
-        out.append((dt.datetime.utcfromtimestamp(ts).date().isoformat(), float(c)))
-    return out
-
-
-def _coingecko_series(ident):
-    data = get_json(
-        f"https://api.coingecko.com/api/v3/coins/{ident}/market_chart"
-        "?vs_currency=usd&days=365&interval=daily"
-    )
-    import datetime as dt
-    out = []
-    for ms, price in data.get("prices", []):
-        d = dt.datetime.utcfromtimestamp(ms / 1000).date().isoformat()
-        out.append((d, float(price)))
-    return out
-
-
-ADAPTERS = {"fred": _fred_series, "yahoo": _yahoo_series, "coingecko": _coingecko_series}
-
-LINKS = {
-    "fred": "https://fred.stlouisfed.org/series/{ident}",
-    "yahoo": "https://finance.yahoo.com/quote/{ident}",
-    "coingecko": "https://www.coingecko.com/en/coins/{ident}",
-}
-
-
-# ── analytics ────────────────────────────────────────────────────────────
-def _change(values, n, unit):
-    """Change over n observations. Percent for prices, absolute for rates."""
-    if len(values) <= n:
-        return None
-    old, new = values[-1 - n], values[-1]
-    if unit == "pct":            # rates: report basis-point moves, not % of %
-        return round((new - old) * 100, 1)
-    if old == 0:
-        return None
-    return round((new - old) / abs(old) * 100, 2)
-
-
-def _analyse(s, points):
-    """Turn a raw series into the row Simons ranks."""
-    values = [v for _, v in points]
-    if len(values) < 30:
-        return None
-    latest = values[-1]
-    window = values[-252:] if len(values) >= 252 else values
-    mean = statistics.fmean(window)
-    sd = statistics.pstdev(window) or None
-    z = round((latest - mean) / sd, 2) if sd else None
-
-    five_y = values[-1260:] if len(values) >= 1260 else values
-    below = sum(1 for v in five_y if v <= latest)
-    pctile = round(below / len(five_y) * 100, 1)
-
-    # Realised vol: stdev of daily changes, recent vs the trailing year.
-    diffs = [b - a for a, b in zip(values[-253:], values[-252:])]
-    recent = diffs[-21:]
-    vol_ratio = None
-    if len(diffs) > 40 and len(recent) == 21:
-        base = statistics.pstdev(diffs)
-        cur = statistics.pstdev(recent)
-        if base:
-            vol_ratio = round(cur / base, 2)
-
-    chg = {k: _change(values, n, s.unit) for k, n in TRADING_DAYS.items()}
-    return {
-        "key": s.key,
-        "name": s.name,
-        "group": s.group,
-        "unit": s.unit,
-        "link": LINKS[s.source].format(ident=s.ident),
-        "level": round(latest, 4 if s.unit == "pct" else 2),
-        "z": z,
-        "abs_z": abs(z) if z is not None else None,
-        "pctile": pctile,
-        "extremity": round(abs(pctile - 50) * 2, 1),
-        "chg_1m": chg["1m"],
-        "chg_3m": chg["3m"],
-        "chg_12m": chg["12m"],
-        "abs_chg_1m": abs(chg["1m"]) if chg["1m"] is not None else None,
-        "abs_chg_3m": abs(chg["3m"]) if chg["3m"] is not None else None,
-        "vol_ratio": vol_ratio,
-        "as_of": points[-1][0],
-        "sources": [s.source],
-        "noise": False,
-    }
 
 
 @register
@@ -271,31 +130,8 @@ class Simons(Telescope):
     def source_keys(self):
         return ["fred", "yahoo", "coingecko"]
 
-    def _series(self, s, ttl):
-        """One cached series. A dead source yields an empty list, not a crash."""
-        def go():
-            try:
-                return ADAPTERS[s.source](s.ident)
-            except Exception:
-                return []
-        return self.cache.cached(f"series_{s.key}", ttl, go)
-
     def collect(self, force=False):
-        ttl = self.ttl(force)
-        rows = []
-        stamps = {}
-        for s in SERIES:
-            points = self._series(s, ttl)
-            if not points:
-                continue
-            row = _analyse(s, points)
-            if row:
-                rows.append(row)
-                stamps.setdefault(s.source, True)
-        # Freshness readout keys off the per-source marker files.
-        for src in stamps:
-            self.cache.cached(src, 0, lambda: True)
-        return rows
+        return fetch_panel(self, SERIES, self.ttl(force))
 
     # ── secondary panel: the shape of the curve right now ────────────────
     def context(self, force=False):
@@ -308,15 +144,15 @@ class Simons(Telescope):
             s = next((x for x in SERIES if x.key == key), None)
             if not s:
                 continue
-            pts = self._series(s, ttl)
+            pts = self.cache.get(f"series_{s.key}", ttl) or []
             if not pts:
                 continue
             vals = [v for _, v in pts]
             rows.append({
                 "tenor": label,
                 "level": round(vals[-1], 3),
-                "chg_1m": _change(vals, 21, "pct"),
-                "chg_12m": _change(vals, 252, "pct"),
+                "chg_1m": change(vals, 21, "pct"),
+                "chg_12m": change(vals, 252, "pct"),
             })
         if not rows:
             return None

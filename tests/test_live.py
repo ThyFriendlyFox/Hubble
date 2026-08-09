@@ -22,11 +22,12 @@ from telescope import registry                                   # noqa: E402
 
 registry.discover()
 
-ALL = ["hubble", "jackson", "simons", "kepler"]
+ALL = ["hubble", "jackson", "simons", "kepler", "holmdel", "reddington"]
 
 # Minimum rows a healthy sweep should return. Set low enough to survive a
 # partial source outage but high enough to catch "the API changed shape".
-MIN_ROWS = {"hubble": 100, "jackson": 20, "simons": 10, "kepler": 30}
+MIN_ROWS = {"hubble": 100, "jackson": 20, "simons": 10, "kepler": 30,
+            "holmdel": 20, "reddington": 8}
 
 
 @pytest.fixture(scope="module", params=ALL)

@@ -25,8 +25,8 @@ No API keys. Every source below is public.
 | 🛡 | **Jackson** | Defense | primes | USAspending obligations · PSC capability areas · SBIR |
 | 💰 | **Simons** | Capital | indicators | FRED · Yahoo Finance · CoinGecko |
 | 🪐 | **Kepler** | Startups | issuers | SEC Form D · EDGAR · Hacker News |
-| 📡 | *Holmdel* | Ideas | topics | *(building — see ROADMAP)* |
-| 🚛 | *Reddington* | Logistics | lanes | *(building — see ROADMAP)* |
+| 📡 | **Holmdel** | Ideas | topics | Hacker News · Wikipedia pageviews · npm |
+| 🚛 | **Reddington** | Logistics | gauges | FRED freight series · freight-sector equities |
 
 Each is **independently toggleable** from the TELESCOPES tab. A disabled
 telescope is never fetched and never polled, so you can run just Hubble on a
@@ -44,6 +44,15 @@ laptop or light the whole observatory on a server. Toggle state persists to
   how far each is reading from its own trailing normal (z-score, range
   extremity, vol expansion), so the board answers "what should I look at today"
   and the feed announces regime crossings.
+- **Holmdel** — idea velocity across a curated watchlist, ranked on
+  acceleration rather than volume, with a cross-source **spread** signal
+  (one surface is a rumour, three is a trend). It ships *without* a research
+  source and says so: arXiv, Semantic Scholar and OpenAlex all rate-limit this
+  deployment and Crossref's API is an OR match, so it reads attention and
+  adoption, not scholarship.
+- **Reddington** — freight at the resolution the free tier honestly supports:
+  national index level, not lane level. Volume (tonnage, carloads) against cost
+  (diesel, freight PPI), plus the market's own read via carrier equities.
 - **Kepler** — startup discovery, outside-in. Under Reg D essentially every US
   private raise must file a **Form D** within 15 days of first sale, with the
   offering size and amount sold. It's public, structured, and usually lands
@@ -141,6 +150,7 @@ telescope/           the kernel — domain-agnostic
   events.py          declarative event rules
   snapshots.py       snapshot history + diff engine
   registry.py        registration + on/off toggles
+  series.py         shared time-series adapters + analytics
   cache.py http.py notifier.py
 observatories/       one module per telescope — the only domain-specific code
 templates/ static/   one generic frontend, driven by telescope metadata

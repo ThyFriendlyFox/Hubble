@@ -48,18 +48,39 @@ PHASES = [
     },
     {
         "title": "PHASE 2 · THE REMAINING INSTRUMENTS",
-        "status": "building",
-        "note": "Holmdel is the hardest in the fleet: ideas have no natural "
-                "join key, so it ships with a curated watchlist first.",
+        "status": "shipped",
+        "note": "All six telescopes now run. Holmdel shipped without a research "
+                "source: every free scholarly API is unusable from this "
+                "deployment, so it reads attention and adoption and says so "
+                "rather than faking scholarship.",
         "items": [
-            {"name": "📡 Holmdel · Ideas", "done": False,
-             "detail": "arXiv + HN + GitHub + Wikipedia velocity over a curated topic list"},
-            {"name": "🚛 Reddington · Logistics", "done": False,
-             "detail": "freight indices + EIA fuel + port throughput; free tier is index-level"},
+            {"name": "📡 Holmdel · Ideas", "done": True,
+             "detail": "HN + Wikipedia + npm velocity over a 32-topic curated watchlist"},
+            {"name": "🚛 Reddington · Logistics", "done": True,
+             "detail": "FRED freight volume/cost + freight-sector equities, index level"},
+            {"name": "Shared series kernel", "done": True,
+             "detail": "telescope/series.py — Simons and Reddington share adapters and analytics"},
+            {"name": "Small-denominator gate", "done": True,
+             "detail": "Holmdel reports no growth below 12 stories rather than a loud +500%"},
+        ],
+    },
+    {
+        "title": "PHASE 2B · UNBLOCKING HOLMDEL",
+        "status": "next",
+        "note": "Holmdel's research blindness is an access problem, not a "
+                "design one. Each item below restores a source that exists but "
+                "is unreachable from this deployment.",
+        "items": [
+            {"name": "Keyed scholarly source", "done": False,
+             "detail": "Semantic Scholar or OpenAlex API key — restores paper velocity"},
+            {"name": "arXiv via OAI-PMH", "done": False,
+             "detail": "bulk harvest instead of the rate-limited query API"},
+            {"name": "GitHub repo velocity", "done": False,
+             "detail": "blocked here — session proxy binds GitHub to configured repos"},
             {"name": "Holmdel crossover event", "done": False,
-             "detail": "'research → builders' — the highest-value transition to detect"},
+             "detail": "'research → builders' — needs a papers source first"},
             {"name": "Topic auto-discovery", "done": False,
-             "detail": "graduate Holmdel from curated watchlist to embedding-cluster resolution"},
+             "detail": "graduate from curated watchlist to embedding-cluster resolution"},
         ],
     },
     {

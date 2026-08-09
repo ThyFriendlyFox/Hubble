@@ -24,14 +24,24 @@ _Generated from `roadmap.py`, which also backs the dashboard's ROADMAP tab._
 - [x] **🪐 Kepler · Startups** — SEC Form D raise detection + HN attention + stealth flagging
 - [x] **Live smoke tests** — tests/ hits every real source and asserts on shape, not fixtures
 
-## PHASE 2 · THE REMAINING INSTRUMENTS  ·  `building`  (0/4)
+## PHASE 2 · THE REMAINING INSTRUMENTS  ·  `shipped`  (4/4)
 
-> Holmdel is the hardest in the fleet: ideas have no natural join key, so it ships with a curated watchlist first.
+> All six telescopes now run. Holmdel shipped without a research source: every free scholarly API is unusable from this deployment, so it reads attention and adoption and says so rather than faking scholarship.
 
-- [ ] **📡 Holmdel · Ideas** — arXiv + HN + GitHub + Wikipedia velocity over a curated topic list
-- [ ] **🚛 Reddington · Logistics** — freight indices + EIA fuel + port throughput; free tier is index-level
-- [ ] **Holmdel crossover event** — 'research → builders' — the highest-value transition to detect
-- [ ] **Topic auto-discovery** — graduate Holmdel from curated watchlist to embedding-cluster resolution
+- [x] **📡 Holmdel · Ideas** — HN + Wikipedia + npm velocity over a 32-topic curated watchlist
+- [x] **🚛 Reddington · Logistics** — FRED freight volume/cost + freight-sector equities, index level
+- [x] **Shared series kernel** — telescope/series.py — Simons and Reddington share adapters and analytics
+- [x] **Small-denominator gate** — Holmdel reports no growth below 12 stories rather than a loud +500%
+
+## PHASE 2B · UNBLOCKING HOLMDEL  ·  `next`  (0/5)
+
+> Holmdel's research blindness is an access problem, not a design one. Each item below restores a source that exists but is unreachable from this deployment.
+
+- [ ] **Keyed scholarly source** — Semantic Scholar or OpenAlex API key — restores paper velocity
+- [ ] **arXiv via OAI-PMH** — bulk harvest instead of the rate-limited query API
+- [ ] **GitHub repo velocity** — blocked here — session proxy binds GitHub to configured repos
+- [ ] **Holmdel crossover event** — 'research → builders' — needs a papers source first
+- [ ] **Topic auto-discovery** — graduate from curated watchlist to embedding-cluster resolution
 
 ## PHASE 3 · MAKING THE SIGNAL SHARPER  ·  `next`  (0/7)
 
