@@ -178,14 +178,17 @@ def _poller():
 
 
 def _start_poller():
-    # Flask's debug reloader imports this module twice; only poll in the
-    # active worker process (or when the reloader is off).
+    # Flask's debug reloader runs this module in two processes; only poll in
+    # the active worker (or when the reloader is off). This reads app.debug,
+    # so the caller must set it BEFORE calling — app.run(debug=True) sets it
+    # too late, which silently gives every source double the traffic.
     if app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
         return
     threading.Thread(target=_poller, daemon=True).start()
 
 
 if __name__ == "__main__":
+    app.debug = os.environ.get("OBSERVATORY_DEBUG", "1") != "0"
     if POLLING:
         _start_poller()
-    app.run(debug=True, port=int(os.environ.get("PORT", 5000)))
+    app.run(port=int(os.environ.get("PORT", 5000)))
