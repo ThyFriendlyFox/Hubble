@@ -1,0 +1,130 @@
+"""The observatory's feature roadmap, as data.
+
+Kept here rather than only in Markdown so the dashboard can render it live at
+the ROADMAP tab — the roadmap is part of the product, not a side document.
+`status` is one of: shipped | building | next | later.
+"""
+
+PHASES = [
+    {
+        "title": "PHASE 0 · THE KERNEL",
+        "status": "shipped",
+        "note": "Hubble's pipeline extracted into a domain-agnostic core. "
+                "Adding a telescope now costs a source adapter plus a config "
+                "block, not a rewrite.",
+        "items": [
+            {"name": "telescope/ kernel package", "done": True,
+             "detail": "cache, http, ranking, events, snapshots, notifier, registry"},
+            {"name": "Declarative signals", "done": True,
+             "detail": "each telescope's sliders and score breakdown generate themselves"},
+            {"name": "Declarative event rules", "done": True,
+             "detail": "NewLeader / NewEntrant / Climber / Delta / Threshold shapes"},
+            {"name": "Per-telescope toggles", "done": True,
+             "detail": "persisted to data/observatory.json; disabled scopes never fetch or poll"},
+            {"name": "Generic dashboard", "done": True,
+             "detail": "table, podium and sliders rendered from telescope metadata"},
+            {"name": "Merged observatory feed", "done": True,
+             "detail": "one newest-first stream across every enabled telescope"},
+            {"name": "Per-telescope poll cadence", "done": True,
+             "detail": "Hubble 6h, Jackson 24h — slow data isn't swept hourly"},
+        ],
+    },
+    {
+        "title": "PHASE 1 · THE FIRST FOUR INSTRUMENTS",
+        "status": "shipped",
+        "note": "All four run on live public data with no API keys.",
+        "items": [
+            {"name": "🔭 Hubble · AI", "done": True,
+             "detail": "HuggingFace + OpenRouter + Artificial Analysis + arena"},
+            {"name": "🛡 Jackson · Defense", "done": True,
+             "detail": "USAspending obligations, 12m vs prior 12m, + PSC capability panel"},
+            {"name": "💰 Simons · Capital", "done": True,
+             "detail": "FRED + Yahoo + CoinGecko, ranked by abnormality not opinion"},
+            {"name": "🪐 Kepler · Startups", "done": True,
+             "detail": "SEC Form D raise detection + HN attention + stealth flagging"},
+            {"name": "Live smoke tests", "done": True,
+             "detail": "tests/ hits every real source and asserts on shape, not fixtures"},
+        ],
+    },
+    {
+        "title": "PHASE 2 · THE REMAINING INSTRUMENTS",
+        "status": "building",
+        "note": "Holmdel is the hardest in the fleet: ideas have no natural "
+                "join key, so it ships with a curated watchlist first.",
+        "items": [
+            {"name": "📡 Holmdel · Ideas", "done": False,
+             "detail": "arXiv + HN + GitHub + Wikipedia velocity over a curated topic list"},
+            {"name": "🚛 Reddington · Logistics", "done": False,
+             "detail": "freight indices + EIA fuel + port throughput; free tier is index-level"},
+            {"name": "Holmdel crossover event", "done": False,
+             "detail": "'research → builders' — the highest-value transition to detect"},
+            {"name": "Topic auto-discovery", "done": False,
+             "detail": "graduate Holmdel from curated watchlist to embedding-cluster resolution"},
+        ],
+    },
+    {
+        "title": "PHASE 3 · MAKING THE SIGNAL SHARPER",
+        "status": "next",
+        "note": "Everything here improves telescopes that already exist.",
+        "items": [
+            {"name": "Kepler entity resolution", "done": False,
+             "detail": "resolve issuers to domains; replaces fuzzy HN name matching"},
+            {"name": "Kepler hiring signal", "done": False,
+             "detail": "Greenhouse/Lever/Ashby board endpoints — the honest traction metric"},
+            {"name": "Jackson solicitations", "done": False,
+             "detail": "SAM.gov opportunities as a leading indicator ahead of obligations"},
+            {"name": "Jackson tech-area board", "done": False,
+             "detail": "promote the PSC panel into a rankable second board"},
+            {"name": "Simons 13F whale tracking", "done": False,
+             "detail": "EDGAR 13F position deltas; 45-day lag stated on the row"},
+            {"name": "Backfill history", "done": False,
+             "detail": "seed snapshots from historical data so events fire on day one"},
+            {"name": "Per-signal explanations", "done": False,
+             "detail": "click a score to see exactly which signals produced it"},
+        ],
+    },
+    {
+        "title": "PHASE 4 · THE OBSERVATORY LAYER",
+        "status": "later",
+        "note": "Where a fleet beats a collection: cross-telescope joins.",
+        "items": [
+            {"name": "Cross-telescope joins", "done": False,
+             "detail": "Jackson SBIR award → Kepler candidate; Holmdel crossover → Kepler sector"},
+            {"name": "Saved views / theses", "done": False,
+             "detail": "name a slider configuration and return to it"},
+            {"name": "Watchlists + alerts", "done": False,
+             "detail": "per-entity subscriptions rather than board-level events"},
+            {"name": "Morning brief", "done": False,
+             "detail": "one digest across every telescope, pushed on a schedule"},
+            {"name": "Channels", "done": False,
+             "detail": "Discord and Slack are wired; X needs credentials"},
+            {"name": "Signal-quality feedback", "done": False,
+             "detail": "track which detections proved out — did Kepler beat the intro?"},
+        ],
+    },
+]
+
+
+def as_markdown():
+    """Render the same data as Markdown for ROADMAP.md."""
+    out = ["# 🔭 Observatory — feature roadmap", ""]
+    out.append("_Generated from `roadmap.py`, which also backs the dashboard's "
+               "ROADMAP tab._")
+    out.append("")
+    for p in PHASES:
+        done = sum(1 for i in p["items"] if i["done"])
+        out.append(f"## {p['title']}  ·  `{p['status']}`  ({done}/{len(p['items'])})")
+        out.append("")
+        if p.get("note"):
+            out.append(f"> {p['note']}")
+            out.append("")
+        for i in p["items"]:
+            box = "x" if i["done"] else " "
+            detail = f" — {i['detail']}" if i.get("detail") else ""
+            out.append(f"- [{box}] **{i['name']}**{detail}")
+        out.append("")
+    return "\n".join(out)
+
+
+if __name__ == "__main__":
+    print(as_markdown())
