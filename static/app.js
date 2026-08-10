@@ -240,6 +240,7 @@ function renderStrip() {
       state.slug = el.dataset.slug;
       state.weights = {};
       state.sort = { key: "rank", dir: 1 };
+      panelSort = {};   // panel indices are only meaningful within one telescope
       renderStrip();
       switchView("board");
       load(false);
@@ -546,14 +547,37 @@ function render() {
     .join("");
 }
 
+// Per-panel sort state, keyed by panel index — a telescope can have more
+// than one panel (Jackson has two), each sorted independently. Undefined
+// means "whatever order the backend already scored/sorted it in", which is
+// itself meaningful (a real blended score, not just one raw column) and
+// worth keeping as the default rather than forcing a click first.
+let panelSort = {};
+
+function sortPanelRows(rows, sort) {
+  if (!sort) return rows;
+  const { key, dir } = sort;
+  return [...rows].sort((a, b) => {
+    let av = a[key], bv = b[key];
+    if (typeof av === "string" || typeof bv === "string")
+      return String(av ?? "").localeCompare(String(bv ?? "")) * dir;
+    av = av ?? -Infinity; bv = bv ?? -Infinity;
+    return (av - bv) * dir;
+  });
+}
+
 function renderPanel() {
   const panels = state.panels || [];
   $("#panels-container").innerHTML = panels
     .map((p, i) => {
+      const rows = sortPanelRows(p.rows, panelSort[i]);
       const head = p.columns
-        .map((c) => `<th class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}">${c.label}</th>`)
+        .map(
+          (c) =>
+            `<th class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}" data-panel="${i}" data-sort="${c.field}">${c.label}</th>`
+        )
         .join("");
-      const body = p.rows
+      const body = rows
         .map(
           (r) =>
             "<tr>" +
@@ -573,6 +597,15 @@ function renderPanel() {
     })
     .join("");
 }
+$("#panels-container").addEventListener("click", (e) => {
+  const th = e.target.closest("th[data-sort]");
+  if (!th) return;
+  const i = +th.dataset.panel;
+  const key = th.dataset.sort;
+  const cur = panelSort[i];
+  panelSort[i] = cur && cur.key === key ? { key, dir: -cur.dir } : { key, dir: -1 };
+  renderPanel();
+});
 
 /* ── merged feed ────────────────────────────── */
 const ETYPE_LABEL = {

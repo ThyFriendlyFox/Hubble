@@ -22,7 +22,7 @@ import datetime as dt
 import re
 import traceback
 
-from telescope import Column, Signal, Telescope
+from telescope import Column, Signal, Telescope, ranking
 from telescope.events import ClimberRule, DeltaRule, NewEntrantRule, NewLeaderRule, money
 from telescope.http import post_json, try_json
 from telescope.registry import get as get_telescope, is_enabled, register
@@ -105,6 +105,15 @@ def _filters(start, end):
 
 
 PAGE_MAX = 100  # USAspending rejects limit > 100 with a 422
+
+# The CAPABILITY AREAS panel's own signal schema — ranking.score() doesn't
+# care that these rows aren't a telescope's primary board; it just needs
+# rows/signals/weights, the same three things Telescope.rank() gives it.
+PSC_SIGNALS = (
+    Signal("scale", "amount", "SCALE", log=True),
+    Signal("momentum", "growth_pct", "MOMENTUM"),
+)
+PSC_WEIGHTS = {"scale": 50, "momentum": 50}
 
 
 def _category(category, start, end, limit=100):
@@ -383,10 +392,19 @@ class Jackson(Telescope):
                 "amount": amount,
                 "growth_pct": growth,
             })
-        rows.sort(key=lambda r: r["amount"], reverse=True)
+        # A real rankable board, not just a table sorted by one raw column:
+        # the same normalise-blend-renormalise machinery every board in the
+        # observatory uses, called directly rather than through
+        # Telescope.rank() — ranking.score() has never assumed there's only
+        # one board per telescope, it just takes rows/signals/weights. Scale
+        # and momentum weighted equally, same ratio as the primes board
+        # above: this panel answers "where is defense money moving", and
+        # scale alone would just re-rank by total budget size.
+        ranking.score(rows, PSC_SIGNALS, PSC_WEIGHTS)
+        rows.sort(key=lambda r: (r["score"] is not None, r["score"] or 0), reverse=True)
 
         sbir = self._sbir(ttl)
-        subtitle = "DoD obligations by product/service code, trailing 12 months"
+        subtitle = "DoD obligations by product/service code, trailing 12 months, scored"
         if sbir:
             subtitle += f" · {len(sbir)} recent DoD SBIR awards tracked"
         return {
@@ -394,6 +412,7 @@ class Jackson(Telescope):
             "subtitle": subtitle,
             "columns": [
                 {"field": "name", "label": "CAPABILITY AREA", "fmt": "text"},
+                {"field": "score", "label": "SCORE", "fmt": "score"},
                 {"field": "amount", "label": "12M OBLIGATIONS", "fmt": "money"},
                 {"field": "growth_pct", "label": "VS PRIOR 12M", "fmt": "pct"},
             ],

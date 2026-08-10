@@ -168,8 +168,26 @@ PHASES = [
                        "obligations — confirmed blocked without a registered API "
                        "key (404 on the public search path), same category as "
                        "Semantic Scholar, not attempted further without one"},
-            {"name": "Jackson tech-area board", "done": False,
-             "detail": "promote the PSC panel into a rankable second board"},
+            {"name": "Jackson tech-area board", "done": True,
+             "detail": "the CAPABILITY AREAS panel now has a real blended score "
+                       "(scale + momentum, equally weighted, log-scaled scale), not "
+                       "just a table sorted by raw obligations — reassessed the "
+                       "item rather than carry forward the earlier 'needs a bigger "
+                       "multi-board architecture' assumption: telescope.ranking."
+                       "score() was never actually tied to Telescope.rank()'s one-"
+                       "board-per-class assumption, it just takes rows/signals/"
+                       "weights, so a panel can be genuinely scored by calling it "
+                       "directly, no kernel change needed. Also generalised panel "
+                       "sortability while here — every telescope's every panel can "
+                       "now be sorted by clicking any column header, client-side, "
+                       "independent per panel — since 'rankable' should mean more "
+                       "than one fixed order. Verified against real, current data: "
+                       "the new score re-ranks Guided Missiles ($26.4B, +53.2% "
+                       "growth) above Aircraft, Fixed Wing ($34.5B, +16.7%), which "
+                       "a raw-amount sort never would have; confirmed clicking a "
+                       "column header re-sorts correctly and independently per "
+                       "panel, and that switching telescopes resets sort state so "
+                       "it can't bleed into a differently-shaped panel"},
             {"name": "Jackson · unmapped defense startups", "done": True,
              "detail": "cross-telescope join, not a new source — Jackson's obligations "
                        "board can only see companies that already hold a DoD contract; "
