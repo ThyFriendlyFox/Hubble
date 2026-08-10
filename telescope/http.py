@@ -30,16 +30,25 @@ def _request(method, url, headers=None, **kw):
     for attempt in range(RETRIES):
         try:
             r = requests.request(method, url, headers=h, timeout=TIMEOUT, **kw)
-            # 429/5xx are worth retrying; 4xx otherwise is a real answer.
-            if r.status_code == 429 or r.status_code >= 500:
-                last = SourceError(f"{r.status_code} from {url}")
-                time.sleep(BACKOFF ** attempt)
-                continue
-            r.raise_for_status()
-            return r
         except requests.RequestException as e:
             last = e
             time.sleep(BACKOFF ** attempt)
+            continue
+        # 429/5xx are worth retrying; 4xx otherwise is a real answer — a 404
+        # means "no such resource", not "try again", so it must not fall into
+        # the same retry loop as a rate limit. (It used to: raise_for_status()
+        # raising here was caught by the broad except below and retried three
+        # times with backoff, which is pure waste for an expected-common case
+        # like guessing a job-board slug that doesn't exist.)
+        if r.status_code == 429 or r.status_code >= 500:
+            last = SourceError(f"{r.status_code} from {url}")
+            time.sleep(BACKOFF ** attempt)
+            continue
+        try:
+            r.raise_for_status()
+        except requests.RequestException as e:
+            raise SourceError(f"{r.status_code} from {url}: {e}") from e
+        return r
     raise SourceError(f"{url} failed after {RETRIES} attempts: {last}")
 
 
