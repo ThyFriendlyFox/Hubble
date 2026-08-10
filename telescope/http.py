@@ -76,3 +76,22 @@ def try_json(url, default=None, **kw):
         return get_json(url, **kw)
     except (SourceError, ValueError):
         return default
+
+
+def probe_text(url, timeout=6, headers=None):
+    """A single-attempt, no-retry text fetch for speculative lookups where
+    most guesses are expected to be wrong — e.g. guessing a company's domain
+    name from its filed name. get_text/try_json retry 429/5xx three times
+    with backoff because that's correct for a known-good API having a bad
+    moment; applying that same policy to a guess that's dead 9 times out of
+    10 (dead DNS, expired cert, connection timeout) would turn a batch of
+    guesses into minutes of pure waste. Returns None on any failure."""
+    h = dict(UA)
+    if headers:
+        h.update(headers)
+    try:
+        r = requests.get(url, headers=h, timeout=timeout, allow_redirects=True)
+        r.raise_for_status()
+        return r.text
+    except requests.RequestException:
+        return None

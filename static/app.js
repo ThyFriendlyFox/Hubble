@@ -56,9 +56,13 @@ function fmtText(s) {
   if (s === null || s === undefined || s === "") return "<span class=dim>—</span>";
   return String(s);
 }
+function fmtUrl(u) {
+  if (!u) return "<span class=dim>—</span>";
+  return `<a href="https://${u}" target="_blank" rel="noopener">${u}</a>`;
+}
 const FORMATTERS = {
   num: fmtNum, int: fmtInt, money: fmtMoney, price: fmtPrice,
-  pct: fmtPct, signed: fmtSigned, text: fmtText, date: fmtText,
+  pct: fmtPct, signed: fmtSigned, text: fmtText, date: fmtText, url: fmtUrl,
   score: (n) => (n === null || n === undefined ? "—" : n),
   rank: (n) => (n === null || n === undefined ? "<span class=dim>—</span>" : "#" + n),
 };
@@ -301,7 +305,7 @@ function renderHead() {
     cols
       .map(
         (c) =>
-          `<th class="${c.fmt === "text" ? "left" : ""}" data-sort="${c.field}">${c.label}</th>`
+          `<th class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}" data-sort="${c.field}">${c.label}</th>`
       )
       .join("");
   $("#thead-row").querySelectorAll("th[data-sort]").forEach((th) => {
@@ -409,7 +413,7 @@ function render() {
             const pct = r.score ? (r.score / maxScore) * 100 : 0;
             return `<td class="scorecell scorebar" data-key="${r.key}">${r.score ?? "—"}<i style="width:${pct}%"></i></td>`;
           }
-          return `<td class="${c.fmt === "text" ? "left" : ""}">${cell(r, c)}</td>`;
+          return `<td class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}">${cell(r, c)}</td>`;
         })
         .join("");
       return `<tr class="${r.rank === 1 ? "top1" : ""}">
@@ -423,14 +427,14 @@ function renderPanel() {
   $("#panels-container").innerHTML = panels
     .map((p, i) => {
       const head = p.columns
-        .map((c) => `<th class="${c.fmt === "text" ? "left" : ""}">${c.label}</th>`)
+        .map((c) => `<th class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}">${c.label}</th>`)
         .join("");
       const body = p.rows
         .map(
           (r) =>
             "<tr>" +
             p.columns
-              .map((c) => `<td class="${c.fmt === "text" ? "left" : ""}">${cell(r, c)}</td>`)
+              .map((c) => `<td class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}">${cell(r, c)}</td>`)
               .join("") +
             "</tr>"
         )
