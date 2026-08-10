@@ -643,6 +643,35 @@ PHASES = [
                        "sweeping again both clears the error and resumes "
                        "advancing. Added 2 kernel tests pinning safe_sweep()'s "
                        "error-tracking directly"},
+            {"name": "Cache resilience for Hubble's own sources", "done": True,
+             "detail": "the cache-resilience audit had covered Simons/"
+                       "Reddington, Jackson and Kepler but never circled back to "
+                       "Hubble itself — the original, reference telescope — "
+                       "which turned out to have the exact same bug fixed in "
+                       "Jackson two iterations ago: fetch_huggingface() and "
+                       "fetch_openrouter() called get_json() directly with no "
+                       "fallback at all, so a transient HuggingFace or "
+                       "OpenRouter outage would crash the whole sweep instead "
+                       "of degrading like every other fetcher in the fleet. "
+                       "Unlike Jackson's case this was a one-line fix per "
+                       "fetcher rather than a new try/except block — both are "
+                       "plain GET calls, so try_json (already built for "
+                       "exactly this) was a straight swap-in, no new kernel "
+                       "code needed. Then added is_empty to both: "
+                       "HuggingFace's text-generation models sorted by "
+                       "downloads and OpenRouter's weekly usage ranking are "
+                       "never legitimately empty, so an empty result is "
+                       "unambiguously a fetch failure. Left fetch_lmarena() "
+                       "alone — its own docstring already says 'best effort; "
+                       "may be empty,' the same category as Kepler's "
+                       "_domains()/_hiring(), where forcing is_empty would "
+                       "treat a correct empty reading as a failure. Verified "
+                       "against real, current data: today's live fetch (300 "
+                       "HuggingFace models, 400 OpenRouter models) is untouched "
+                       "by the predicates, and simulating a total outage on "
+                       "both confirmed the real cached data survives instead "
+                       "of being overwritten. This closes out the "
+                       "cache-resilience audit across all six telescopes"},
         ],
     },
 ]

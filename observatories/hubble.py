@@ -14,7 +14,7 @@ import re
 
 from telescope import Column, Signal, Telescope
 from telescope.events import ClimberRule, DeltaRule, NewEntrantRule, NewLeaderRule
-from telescope.http import get_json, get_text
+from telescope.http import get_text, try_json
 from telescope.registry import register
 
 
@@ -153,14 +153,19 @@ class Hubble(Telescope):
                     "likes": m.get("likes") or 0,
                     "created_at": m.get("createdAt"),
                 }
-                for m in get_json(url)
+                for m in try_json(url, default=[])
             ]
-        return self.cache.cached("hf", ttl, go)
+        # HuggingFace's text-generation models sorted by downloads is never
+        # legitimately empty, so an empty result is a fetch failure worth
+        # falling back to stale-but-real data for, not the new truth.
+        return self.cache.cached("hf", ttl, go, is_empty=lambda r: not r)
 
     def fetch_openrouter(self, ttl):
         """Models ordered by weekly token usage — array index IS the rank."""
         def go():
-            data = get_json("https://openrouter.ai/api/v1/models?order=top-weekly")["data"]
+            data = try_json(
+                "https://openrouter.ai/api/v1/models?order=top-weekly", default={}
+            ).get("data") or []
             out = []
             for rank, m in enumerate(data, start=1):
                 pricing = m.get("pricing") or {}
@@ -182,7 +187,9 @@ class Hubble(Telescope):
                     "arena_elo": max(elos) if elos else None,
                 })
             return out
-        return self.cache.cached("openrouter", ttl, go)
+        # OpenRouter's weekly usage ranking is never legitimately empty
+        # either, same reasoning as fetch_huggingface().
+        return self.cache.cached("openrouter", ttl, go, is_empty=lambda r: not r)
 
     def fetch_lmarena(self, ttl):
         """Lowered model name -> arena elo. Best effort; may be empty."""
