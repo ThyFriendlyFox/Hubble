@@ -16,7 +16,19 @@ TOP_EVENTS_PER_SCOPE = 3
 
 def build(since=None, hours=DEFAULT_WINDOW_HOURS):
     """{"generated_at", "since", "sections": [...]} across every enabled
-    telescope. `since` overrides `hours` when given explicitly."""
+    telescope. `since` overrides `hours` when given explicitly.
+
+    Reads store.latest() (a snapshot already on disk from the last real
+    sweep), never collect() — collect(force=False) is *not* the same as
+    "cheap": if a telescope's cache has simply expired via its own TTL,
+    force=False still triggers a real, potentially slow, paced live fetch,
+    the exact same one a real sweep would make. That contradicted this
+    function's own documented "always cheap" contract and made a
+    dashboard visit to the BRIEF tab hang for minutes whenever any
+    enabled telescope's cache happened to have expired — found by
+    actually using it, not by any existing test, since every prior test
+    ran right after the whole fleet's cache had just been warmed.
+    """
     now = time.time()
     since = since if since is not None else now - hours * 3600
     sections = []
@@ -25,11 +37,12 @@ def build(since=None, hours=DEFAULT_WINDOW_HOURS):
             scope = registry.get(slug)
         except KeyError:
             continue
-        try:
-            rows = scope.rank(scope.collect(force=False))
-        except Exception:
-            rows = []
-        leader = rows[0] if rows and rows[0].get("score") is not None else None
+        snapshot = scope.store.latest()
+        rows = snapshot["rows"] if snapshot else []
+        leader = next(
+            (r for r in rows if r.get("rank") == 1 and r.get("score") is not None),
+            None,
+        )
         events = [
             e for e in scope.store.load_events(limit=100)
             if (e.get("ts") or 0) >= since

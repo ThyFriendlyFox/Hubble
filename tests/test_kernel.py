@@ -484,6 +484,40 @@ def test_brief_render_text_handles_no_enabled_telescopes():
     assert "No telescopes enabled" in text
 
 
+def test_brief_build_never_calls_collect():
+    """Regression test for a real bug: build() used to call
+    collect(force=False), which is not the same as cheap -- a telescope's
+    cache simply expiring via its own TTL still triggers a real, potentially
+    slow, paced live fetch, exactly what a real sweep would do. That
+    contradicted build()'s own documented 'always cheap' contract and made
+    visiting the BRIEF tab hang for minutes whenever any enabled telescope's
+    cache happened to be stale. build() must read store.latest() only."""
+    class Scope(Telescope):
+        slug = "test_brief_ns"
+        name = "TEST"
+        glyph = "x"
+        tagline = "T"
+        entity_label = "E"
+        signals = (Signal("v", "value", "VALUE"),)
+        default_weights = {"v": 100}
+        snapshot_fields = ("value",)
+
+        def collect(self, force=False):
+            raise AssertionError("brief.build() must never call collect()")
+
+    scope, tmp = _isolated_scope(Scope)
+    try:
+        scope.store.seed(scope.rank([{"key": "a", "name": "A", "value": 10,
+                                       "noise": False, "sources": ["x"], "link": ""}]),
+                          0.0)
+        with patch.object(registry, "enabled_slugs", return_value=["test_brief_ns"]), \
+             patch.object(registry, "get", return_value=scope):
+            digest = brief.build(hours=24)
+        assert digest["sections"][0]["leader"]["name"] == "A"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 # ── series analytics (Simons/Reddington shared kernel) ──────────────────────
 # analyse()/change() are pure functions with no network of their own — real
 # coverage previously came only from test_live.py's live fetches, which can't

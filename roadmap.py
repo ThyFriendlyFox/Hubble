@@ -778,6 +778,40 @@ PHASES = [
                        "delete, scope isolation) both still work correctly "
                        "after all the backend churn this session — no other "
                        "regressions found"},
+            {"name": "Brief tab no longer hangs on a stale telescope cache",
+             "done": True,
+             "detail": "found immediately after fixing the Flask threading "
+                       "issue, while continuing the same 'actually click "
+                       "through the dashboard' verification pass: the BRIEF "
+                       "tab itself hung for minutes. telescope/brief.py's own "
+                       "docstring claims build() 'never forc[es] a fresh "
+                       "sweep, so building a brief is always cheap regardless "
+                       "of how expensive an individual telescope's own "
+                       "collect() is' — but it called "
+                       "scope.rank(scope.collect(force=False)), and "
+                       "force=False is not the same as cheap: if a "
+                       "telescope's cache has simply expired via its own "
+                       "TTL, force=False still triggers a real, potentially "
+                       "slow, paced live fetch, exactly what a real sweep "
+                       "would do. Confirmed directly, outside Flask entirely: "
+                       "brief.build() took over two minutes in a fresh "
+                       "Python process with a stale Kepler cache, flatly "
+                       "contradicting its own contract. No existing test ever "
+                       "caught this because every prior test ran right after "
+                       "the whole fleet's cache had just been warmed by the "
+                       "rest of that same test session. Fixed by reading "
+                       "scope.store.latest() instead — a snapshot already on "
+                       "disk from the last real sweep, a pure disk read with "
+                       "no network involved at all, genuinely matching the "
+                       "'always cheap' contract rather than just claiming "
+                       "it. Verified against real, current data: build() now "
+                       "takes 0.0054s (was 120s+) and produces the exact "
+                       "same real leaders across all six telescopes as "
+                       "before (confirmed against the dev server's own "
+                       "recently-logged brief output); the live BRIEF tab "
+                       "itself now loads in 14ms. Added a kernel regression "
+                       "test asserting collect() is never called during "
+                       "build()"},
         ],
     },
 ]
