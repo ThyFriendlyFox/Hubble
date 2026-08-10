@@ -80,9 +80,14 @@ PHASES = [
              "detail": "arXiv's query API works fine unauthenticated with normal "
                        "pacing (~1 req/3s) — bulk OAI-PMH harvest is still worth it "
                        "as a second scholarly surface, not a fix for a block"},
-            {"name": "GitHub repo velocity", "done": False,
-             "detail": "unblocked — GitHub's unauthenticated search API returns 200 "
-                       "locally (60 req/hour ceiling) — add as Holmdel's fourth surface"},
+            {"name": "GitHub repo velocity", "done": True,
+             "detail": "new-repo creation velocity + peak stars, 180-day window vs "
+                       "prior, on the same quoted-phrase pattern as HN/OpenAlex. The "
+                       "real limit turned out stricter than first read: GitHub's "
+                       "*search* endpoint caps at 10 req/min unauthenticated, not the "
+                       "~60/hour of its other APIs — a full 32-topic sweep now takes "
+                       "several minutes, paced accordingly. Matches repo name and "
+                       "description only, not READMEs"},
             {"name": "Holmdel crossover event", "done": False,
              "detail": "'research → builders' — papers source now exists; needs a new "
                        "declarative rule shape in telescope/events.py that compares a "

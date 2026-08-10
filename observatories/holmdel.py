@@ -14,6 +14,7 @@ Sources (all public, no keys):
   Wikipedia pageviews     general curiosity, 60-day window vs the prior 60
   npm registry            builder adoption, where a topic has a canonical package
   OpenAlex                paper velocity, 180-day window vs the prior 180
+  GitHub search           new-repo velocity + peak stars, 180-day window vs prior
 
 The cross-source **spread** signal is the honest core: an idea moving on one
 surface is a rumour, an idea moving on three is a trend. Topics with only a
@@ -29,9 +30,16 @@ influence — a citation-weighted signal is a further improvement, not this one.
 Semantic Scholar's unauthenticated quota is a small pool shared globally by
 every caller without a key, so it stays unusable here regardless of network;
 Crossref's query API is an OR match (a quoted three-word topic returns
-millions of rows), so its counts are not topic counts either. Holmdel still
-cannot see GitHub repo or star velocity, and it still tracks a curated
-watchlist rather than discovering topics on its own.
+millions of rows), so its counts are not topic counts either.
+
+GitHub's search API is also unauthenticated-reachable, but its *search*
+endpoint carries a much stricter rate limit than the rest of GitHub's API —
+10 requests/minute, not the ~60/hour a first check of the wrong bucket
+suggested — so a full 32-topic sweep is paced at roughly one request every
+6.5 seconds and takes several minutes. It matches on repo name and
+description, not README contents, so a topic's actual codebase footprint is
+undercounted. Holmdel still tracks a curated watchlist rather than
+discovering topics on its own.
 """
 import datetime as dt
 import time
@@ -48,6 +56,8 @@ WINDOW_DAYS = 90        # HN comparison window
 WIKI_DAYS = 60          # Wikipedia comparison window
 RESEARCH_DAYS = 180     # OpenAlex comparison window — papers are sparser than posts
 MIN_PAPERS = 15         # below this combined count, paper growth is noise
+GITHUB_DAYS = 180       # GitHub comparison window — matches the research cadence
+MIN_REPOS = 6           # below this combined count, repo growth is noise
 
 
 @dataclass(frozen=True)
@@ -160,7 +170,7 @@ class Holmdel(Telescope):
     glyph = "📡"
     tagline = "IDEA VELOCITY INDEX"
     entity_label = "TOPICS"
-    sources_label = "HACKER NEWS · WIKIPEDIA · NPM · OPENALEX"
+    sources_label = "HACKER NEWS · WIKIPEDIA · NPM · OPENALEX · GITHUB"
     caveat = ("Tracks a curated watchlist, so it can only see ideas someone "
               "already put on the list — it does not discover new topics yet. "
               "Research velocity is OpenAlex work counts on a quoted phrase "
@@ -168,7 +178,10 @@ class Holmdel(Telescope):
               "Semantic Scholar and arXiv's own APIs remain too rate-limited "
               "unauthenticated to add as a second scholarly surface, and "
               "Crossref's OR-match query API can't produce valid topic "
-              "counts. It still cannot see GitHub repo or star velocity.")
+              "counts. Repo velocity matches on GitHub repo name and "
+              "description only, not READMEs, and GitHub's search endpoint's "
+              "strict 10-req/min unauthenticated limit means a full sweep "
+              "takes several minutes.")
 
     cache_ttl = 12 * 3600
     poll_seconds = 24 * 3600
@@ -177,20 +190,24 @@ class Holmdel(Telescope):
         Signal("velocity", "hn_growth", "ATTENTION VELOCITY"),
         Signal("curiosity", "wiki_growth", "CURIOSITY TREND"),
         Signal("research", "paper_growth", "RESEARCH VELOCITY"),
+        Signal("traction", "repo_growth", "REPO VELOCITY"),
         Signal("volume", "hn_recent", "STORY VOLUME", log=True),
         Signal("peak", "hn_points", "PEAK STORY", log=True),
         Signal("reach", "wiki_recent", "PUBLIC REACH", log=True),
         Signal("adoption", "npm_downloads", "BUILDER ADOPTION", log=True),
         Signal("papers", "paper_recent", "PAPER VOLUME", log=True),
+        Signal("repos", "repo_recent", "NEW REPOS", log=True),
+        Signal("stars", "repo_stars", "PEAK REPO STARS", log=True),
         Signal("spread", "spread", "CROSS-SOURCE SPREAD"),
     )
     default_weights = {
-        "velocity": 25, "curiosity": 15, "research": 15, "volume": 8,
-        "peak": 4, "reach": 8, "adoption": 5, "papers": 5, "spread": 15,
+        "velocity": 22, "curiosity": 13, "research": 13, "traction": 13,
+        "volume": 6, "peak": 3, "reach": 6, "adoption": 4, "papers": 4,
+        "repos": 4, "stars": 2, "spread": 10,
     }
     # An idea moving on one independent surface is a rumour. Topics with no
     # growth reading on any of these get dampened rather than dropped.
-    quality_signals = ("velocity", "curiosity", "research")
+    quality_signals = ("velocity", "curiosity", "research", "traction")
 
     columns = (
         Column("name", "TOPIC", "text"),
@@ -203,6 +220,9 @@ class Holmdel(Telescope):
         Column("wiki_recent", "WIKI 60D", "int"),
         Column("paper_growth", "PAPER TREND", "pct"),
         Column("paper_recent", "PAPERS 180D", "int"),
+        Column("repo_growth", "REPO TREND", "pct"),
+        Column("repo_recent", "REPOS 180D", "int"),
+        Column("repo_stars", "TOP STARS", "int"),
         Column("npm_downloads", "NPM/MO", "int"),
         Column("spread", "SPREAD", "int"),
     )
@@ -235,14 +255,21 @@ class Holmdel(Telescope):
             headline="🔬 {name} research is accelerating — papers up {pct}% "
                      "({old_fmt} → {new_fmt} in 180 days).",
         ),
+        DeltaRule(
+            field="repo_recent", direction="up", frac=0.75, min_abs=MIN_REPOS,
+            type="repo_signal",
+            headline="🛠 {name} is drawing builders — new repos up {pct}% "
+                     "({old_fmt} → {new_fmt} in 180 days).",
+        ),
     )
     snapshot_fields = (
         "hn_growth", "hn_recent", "hn_points", "wiki_growth", "wiki_recent",
-        "paper_growth", "paper_recent", "npm_downloads", "spread", "group",
+        "paper_growth", "paper_recent", "repo_growth", "repo_recent",
+        "repo_stars", "npm_downloads", "spread", "group",
     )
 
     def source_keys(self):
-        return ["hn", "wikipedia", "npm", "openalex"]
+        return ["hn", "wikipedia", "npm", "openalex", "github"]
 
     # ── sources ──────────────────────────────────────────────────────────
     def _hn(self, ttl):
@@ -343,6 +370,49 @@ class Holmdel(Telescope):
 
         return self.cache.cached("openalex", ttl, go, is_empty=totally_failed)
 
+    def _github(self, ttl):
+        """New-repo creation velocity per topic, for two adjacent windows.
+
+        GitHub's *search* endpoint has a much stricter unauthenticated rate
+        limit than the rest of its API — 10 requests/minute, not the ~60/hour
+        a first check of the wrong rate-limit bucket suggested — so this
+        paces at ~6.5s between calls. A full 32-topic sweep takes several
+        minutes; it only ever runs from the (12h-cached) background poller or
+        a manual refresh, the same tradeoff Kepler already makes for its SEC
+        EDGAR walk. Reuses each query's own top hits for peak stars, so that
+        signal costs zero requests beyond the count itself.
+        """
+        def go():
+            today = dt.date.today()
+            span = dt.timedelta(days=GITHUB_DAYS)
+            out = {}
+            for t in TOPICS:
+                def window(start, end):
+                    q = quote_plus(
+                        f'"{t.query}" created:{start:%Y-%m-%d}..{end:%Y-%m-%d}'
+                    )
+                    data = try_json(
+                        "https://api.github.com/search/repositories"
+                        f"?q={q}&sort=stars&order=desc&per_page=5",
+                        default={},
+                    )
+                    items = data.get("items") or []
+                    stars = max(
+                        [i.get("stargazers_count") or 0 for i in items], default=0
+                    )
+                    return data.get("total_count"), stars
+
+                recent, stars = window(today - span, today)
+                prior, _ = window(today - 2 * span, today - span)
+                out[t.key] = {"recent": recent, "prior": prior, "stars": stars}
+                time.sleep(6.5)     # GitHub search: 10 req/min unauthenticated
+            return out
+
+        def totally_failed(result):
+            return not any(v.get("recent") is not None for v in result.values())
+
+        return self.cache.cached("github", ttl, go, is_empty=totally_failed)
+
     def _npm(self, ttl):
         def go():
             out = {}
@@ -366,17 +436,20 @@ class Holmdel(Telescope):
         wiki = self._wiki(ttl)
         npm = self._npm(ttl)
         openalex = self._openalex(ttl)
+        github = self._github(ttl)
 
         rows = []
         for t in TOPICS:
             h = hn.get(t.key) or {}
             w = wiki.get(t.key) or {}
             p = openalex.get(t.key) or {}
+            g = github.get(t.key) or {}
             downloads = npm.get(t.key)
 
             hn_recent, hn_prior = h.get("recent"), h.get("prior")
             wiki_recent, wiki_prior = w.get("recent"), w.get("prior")
             paper_recent, paper_prior = p.get("recent"), p.get("prior")
+            repo_recent, repo_prior = g.get("recent"), g.get("prior")
 
             # Spread: how many independent surfaces actually report this topic.
             spread = sum([
@@ -384,6 +457,7 @@ class Holmdel(Telescope):
                 bool(wiki_recent),
                 bool(downloads),
                 bool(paper_recent),
+                bool(repo_recent),
             ])
             rows.append({
                 "key": t.key,
@@ -401,13 +475,18 @@ class Holmdel(Telescope):
                 "paper_recent": paper_recent,
                 "paper_prior": paper_prior,
                 "paper_growth": _growth(paper_recent, paper_prior, floor=MIN_PAPERS),
+                "repo_recent": repo_recent,
+                "repo_prior": repo_prior,
+                "repo_growth": _growth(repo_recent, repo_prior, floor=MIN_REPOS),
+                "repo_stars": g.get("stars") or None,
                 "npm_downloads": downloads,
                 # Scaled 0-100 so it blends like every other signal.
-                "spread": round(spread / 4 * 100, 1),
+                "spread": round(spread / 5 * 100, 1),
                 "sources": (["hn"] if hn_recent else []) +
                            (["wikipedia"] if wiki_recent else []) +
                            (["npm"] if downloads else []) +
-                           (["openalex"] if paper_recent else []) or ["hn"],
+                           (["openalex"] if paper_recent else []) +
+                           (["github"] if repo_recent else []) or ["hn"],
                 # A topic no surface reports is not evidence of anything.
                 "noise": spread == 0,
             })
