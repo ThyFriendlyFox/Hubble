@@ -432,6 +432,28 @@ PHASES = [
                        "and VIX climbing on Simons; PPI General Freight LTL "
                        "becoming new leader on Reddington) instead of the usual "
                        "silent-until-the-second-sweep gap"},
+            {"name": "Kernel test coverage for telescope/series.py", "done": True,
+             "detail": "analyse()/change() (Simons and Reddington's shared "
+                       "z-score/percentile/vol-ratio math) and the new "
+                       "historical_panel() had zero fast, deterministic tests — "
+                       "only ever exercised indirectly by test_live.py's real "
+                       "network fetches, which confirms the shape still works but "
+                       "can't confirm the arithmetic is right. Before spending this "
+                       "iteration, re-checked every other blocked item live rather "
+                       "than assume: SAM.gov (404), Semantic Scholar (429), "
+                       "Jackson's own SBIR fetch (429 'not available at this "
+                       "time'), Reddit's public JSON search (403, locked down "
+                       "since 2023) and Google Trends' unofficial endpoint (429 "
+                       "immediately) — all still genuinely blocked, no X "
+                       "credentials configured either, so nothing on the named "
+                       "roadmap was actually actionable this iteration. Added 7 "
+                       "synthetic, no-network tests: change()'s two unit branches "
+                       "and its not-enough-history case, analyse()'s min_points "
+                       "floor and its z-score/percentile/chg_1m math against a "
+                       "known monotonic series, and historical_panel()'s slice-"
+                       "the-cache reconstruction against a real Cache instance on "
+                       "a throwaway tmp dir (both the happy path and the no-"
+                       "cache-yet path)"},
         ],
     },
 ]

@@ -19,6 +19,7 @@ from telescope.events import (ClimberRule, CrossoverRule, DeltaRule,  # noqa: E4
                               FlagFlipRule, NewEntrantRule, NewLeaderRule,
                               ThresholdRule)
 from telescope.ranking import Signal                             # noqa: E402
+from telescope.series import Series, analyse, change, historical_panel  # noqa: E402
 
 SIGNALS = (
     Signal("a", "a", "A"),
@@ -424,3 +425,90 @@ def test_brief_render_text_pure_formatting():
 def test_brief_render_text_handles_no_enabled_telescopes():
     text = brief.render_text({"generated_at": 0, "since": 0, "sections": []})
     assert "No telescopes enabled" in text
+
+
+# ── series analytics (Simons/Reddington shared kernel) ──────────────────────
+# analyse()/change() are pure functions with no network of their own — real
+# coverage previously came only from test_live.py's live fetches, which can't
+# tell "the shape happens to still work" from "the math is right". Pinned
+# here against synthetic, deterministic history instead.
+def _synthetic_points(n=300, start=100.0, step=1.0):
+    return [(f"d{i:04d}", start + i * step) for i in range(n)]
+
+
+def test_change_pct_unit_reports_basis_points():
+    assert change([4.50, 4.60], 1, "pct") == 10.0   # 0.10pt move -> 10bps
+
+
+def test_change_non_pct_unit_reports_percent():
+    assert change([100.0, 110.0], 1, "index") == 10.0
+
+
+def test_change_none_when_not_enough_history():
+    assert change([1.0, 2.0], 5, "index") is None
+
+
+def test_analyse_returns_none_below_min_points():
+    s = Series("k", "K", "G", "index", "fred", "X")
+    assert analyse(s, _synthetic_points(10), min_points=30) is None
+
+
+def test_analyse_computes_a_real_row_from_synthetic_history():
+    s = Series("k", "K", "G", "index", "fred", "X")
+    points = _synthetic_points(300)
+    row = analyse(s, points, min_points=30)
+    assert row["level"] == points[-1][1]
+    assert row["as_of"] == points[-1][0]
+    # Monotonically rising series -> the latest point sits above its own
+    # trailing mean and at the very top of its own range.
+    assert row["z"] > 0
+    assert row["pctile"] == 100.0
+    assert row["chg_1m"] == change([v for _, v in points], 21, "index")
+    assert row["noise"] is False
+
+
+def test_historical_panel_reconstructs_one_reading_back():
+    """historical_panel() backs Simons/Reddington's historical_rows() —
+    it must re-run analyse() on the cached points with the latest
+    observation dropped, not on the full series, so a telescope's very
+    first sweep diffs against a genuinely earlier reading, not today's."""
+    class FakeScope:
+        def __init__(self, cache):
+            self.cache = cache
+
+    tmp = tempfile.mkdtemp()
+    try:
+        cache = Cache("test_series_ns")
+        cache.dir = tmp
+        s = Series("k", "K", "G", "index", "fred", "X")
+        points = _synthetic_points(300)
+        cache.set(f"series_{s.key}", points)
+        scope = FakeScope(cache)
+
+        rows = historical_panel(scope, (s,), min_points=30)
+        assert len(rows) == 1
+        prior, current = rows[0], analyse(s, points, min_points=30)
+        # Series was still rising -- the prior reading must be genuinely
+        # lower than today's, not a copy of it.
+        assert prior["level"] < current["level"]
+        assert prior["as_of"] == points[-2][0]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_historical_panel_skips_series_with_no_cached_points():
+    """No cache file yet (a telescope's very first sweep, before fetch_panel
+    has ever run) -> skip that series rather than crash or fabricate one."""
+    class FakeScope:
+        def __init__(self, cache):
+            self.cache = cache
+
+    tmp = tempfile.mkdtemp()
+    try:
+        cache = Cache("test_series_empty_ns")
+        cache.dir = tmp
+        s = Series("k", "K", "G", "index", "fred", "X")
+        scope = FakeScope(cache)
+        assert historical_panel(scope, (s,), min_points=30) == []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
