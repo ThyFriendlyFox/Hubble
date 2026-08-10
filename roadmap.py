@@ -475,6 +475,25 @@ PHASES = [
                        "exactly one attempt on failure — never retries — since "
                        "its whole purpose is staying cheap across a batch of "
                        "speculative guesses that are mostly wrong"},
+            {"name": "Kernel test coverage for telescope/notifier.py", "done": True,
+             "detail": "two properties here had zero tests despite being exactly "
+                       "the kind of silent-failure-mode logic worth pinning: every "
+                       "channel is supposed to no-op (not crash, not POST to an "
+                       "empty URL) when its env var isn't configured, and "
+                       "dispatch() is supposed to keep plain movers/deltas out of "
+                       "social entirely — only SOCIAL_TYPES should ever reach "
+                       "Discord/Slack/X. Re-checked the usual blocked sources "
+                       "live again first (SAM.gov 404, Semantic Scholar 429, SBIR "
+                       "429) — still nothing newly actionable. Added 6 tests "
+                       "mocking requests.post and os.environ directly: dispatch() "
+                       "correctly filters a non-social event type out before it "
+                       "reaches any channel, post_to_discord no-ops without a "
+                       "webhook configured and posts when one is, a request "
+                       "exception is swallowed rather than propagated, post_to_x "
+                       "short-circuits on the credential check before ever "
+                       "importing tweepy (an optional dependency that may not "
+                       "even be installed), and dispatch_brief always reaches "
+                       "stdout regardless of channel configuration"},
         ],
     },
 ]

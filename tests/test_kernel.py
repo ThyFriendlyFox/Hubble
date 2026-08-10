@@ -15,7 +15,7 @@ from unittest.mock import patch                                  # noqa: E402
 
 import requests                                                   # noqa: E402
 
-from telescope import brief, http, ranking                       # noqa: E402
+from telescope import brief, http, notifier, ranking              # noqa: E402
 from telescope.base import Telescope                             # noqa: E402
 from telescope.cache import Cache                                # noqa: E402
 from telescope.events import (ClimberRule, CrossoverRule, DeltaRule,  # noqa: E402
@@ -604,3 +604,75 @@ def test_probe_text_makes_exactly_one_attempt():
                side_effect=requests.ConnectionError("boom")) as mock_get:
         assert http.probe_text("https://guessed-domain.test/") is None
     assert mock_get.call_count == 1
+
+
+# ── notifier ─────────────────────────────────────────────────────────────
+# Every channel here is opt-in via an env var, and dispatch() is supposed to
+# keep "just movers" out of social entirely -- both properties had zero
+# tests despite being exactly the kind of silent-failure-mode logic (a
+# missing env var accidentally still POSTing, or a new event type quietly
+# starting to spam a timeline) worth pinning.
+class _StubScope:
+    slug = "test_scope"
+    name = "TEST SCOPE"
+
+
+def test_dispatch_only_pushes_social_event_types_to_channels():
+    """Movers/deltas stay in the dashboard feed only -- a new event type
+    must opt into SOCIAL_TYPES explicitly, not reach a channel by default."""
+    calls = []
+
+    def fake_channel(event, scope):
+        calls.append(event["type"])
+
+    events = [
+        {"type": "new_leader", "headline": "A"},   # in SOCIAL_TYPES
+        {"type": "big_climber", "headline": "B"},  # not
+    ]
+    with patch("telescope.notifier.CHANNELS", (fake_channel,)):
+        notifier.dispatch(events, _StubScope())
+    assert calls == ["new_leader"]
+
+
+def test_post_to_discord_noops_without_a_webhook_configured():
+    """Unconfigured is the honest default: no crash, no accidental POST to
+    an empty URL, just False."""
+    with patch.dict(os.environ, {}, clear=True), \
+         patch("telescope.notifier.requests.post") as mock_post:
+        assert notifier.post_to_discord({"headline": "x"}, _StubScope()) is False
+    mock_post.assert_not_called()
+
+
+def test_post_to_discord_posts_when_webhook_configured():
+    env = {"OBSERVATORY_DISCORD_WEBHOOK": "https://discord.test/hook"}
+    with patch.dict(os.environ, env, clear=True), \
+         patch("telescope.notifier.requests.post") as mock_post:
+        assert notifier.post_to_discord({"headline": "x"}, _StubScope()) is True
+    mock_post.assert_called_once()
+
+
+def test_post_to_discord_swallows_a_request_exception():
+    env = {"OBSERVATORY_DISCORD_WEBHOOK": "https://discord.test/hook"}
+    with patch.dict(os.environ, env, clear=True), \
+         patch("telescope.notifier.requests.post",
+               side_effect=requests.ConnectionError("boom")):
+        assert notifier.post_to_discord({"headline": "x"}, _StubScope()) is False
+
+
+def test_post_to_x_noops_without_credentials():
+    """Must short-circuit on the env-var check before ever importing tweepy
+    -- tweepy is an optional dependency (pip install tweepy) that may not
+    even be present in an unconfigured install."""
+    with patch.dict(os.environ, {}, clear=True):
+        assert notifier.post_to_x({"headline": "x"}, _StubScope()) is False
+
+
+def test_dispatch_brief_always_logs_regardless_of_channel_config():
+    """A digest with no webhooks configured still reaches stdout -- the
+    same unconfigured-is-honest guarantee every other channel here has."""
+    with patch.dict(os.environ, {}, clear=True), \
+         patch("telescope.notifier.requests.post") as mock_post, \
+         patch("builtins.print") as mock_print:
+        notifier.dispatch_brief("the digest text")
+    mock_print.assert_called_once()
+    mock_post.assert_not_called()
