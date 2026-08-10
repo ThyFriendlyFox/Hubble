@@ -582,7 +582,19 @@ class Kepler(Telescope):
 
                 time.sleep(0.15)
             return out
-        return self.cache.cached("hiring", ttl, go)
+
+        def totally_failed(result):
+            if result:
+                return False
+            # Same reasoning as _domains(): a real hit rate this low (1/40 is
+            # the documented honest outcome — most guessed slugs simply don't
+            # exist on any of the three boards) makes an empty result the
+            # expected common case, not a failure signal by itself. Only a
+            # probe against something that's always up can tell "every guess
+            # missed" apart from "our own network is down right now".
+            return probe_text("https://google.com", timeout=6) is None
+
+        return self.cache.cached("hiring", ttl, go, is_empty=totally_failed)
 
     # ── join ─────────────────────────────────────────────────────────────
     def collect(self, force=False):

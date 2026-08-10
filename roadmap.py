@@ -954,6 +954,31 @@ PHASES = [
                        "after: back to 429 every time, consistent with its "
                        "documented tiny globally-shared unauthenticated "
                        "quota rather than a persistent block that's lifted"},
+            {"name": "Kepler hiring cache resilience via the same canary probe",
+             "done": True,
+             "detail": "the direct follow-up flagged when _domains() got its "
+                       "canary fix: _hiring() has the exact same shape — a "
+                       "documented 1/40 real hit rate across Greenhouse/"
+                       "Lever/Ashby, so an empty result is the expected "
+                       "common case, not a failure, and try_json folds a "
+                       "dead guess and a genuine outage into the same None "
+                       "with no way to tell them apart from the result "
+                       "alone. Same fix, same reasoning: probe google.com "
+                       "only when the sweep comes back empty. Verified "
+                       "against real, current data: today's live sweep found "
+                       "exactly 1/40 matches (MedRhythms, Inc. -> Lever, 8 "
+                       "open roles — the same real company this exact signal "
+                       "was verified against when it first shipped), so the "
+                       "canary correctly never fires; directly testing the "
+                       "predicate confirmed all three cases (non-empty, "
+                       "empty-with-real-network, empty-with-simulated-outage) "
+                       "resolve correctly, and simulating a total failure "
+                       "through the real cache confirmed the real MedRhythms "
+                       "entry survives instead of being overwritten with {}. "
+                       "Re-checked the usual blocked sources again: SAM.gov "
+                       "(404), Semantic Scholar (429, the single 200 from "
+                       "last iteration was confirmed a fluke), SBIR (429) — "
+                       "all unchanged"},
         ],
     },
 ]
