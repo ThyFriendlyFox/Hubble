@@ -23,7 +23,7 @@ therefore means one *observation*, not one calendar month — see the caveat.
 from telescope import Column, Signal, Telescope
 from telescope.events import ClimberRule, DeltaRule, NewLeaderRule
 from telescope.registry import register
-from telescope.series import Series, fetch_panel
+from telescope.series import Series, fetch_panel, historical_panel
 
 SERIES = (
     # ── volume: what is actually moving ──────────────────────────────────
@@ -127,6 +127,9 @@ class Reddington(Telescope):
         # Monthly series carry far fewer observations than daily ones, so the
         # minimum bar has to clear a monthly history rather than a daily one.
         return fetch_panel(self, SERIES, self.ttl(force), min_points=24)
+
+    def historical_rows(self, rows):
+        return historical_panel(self, SERIES, min_points=24)
 
     # ── secondary panel: cost vs volume, the core freight tension ────────
     def context(self, force=False):

@@ -380,6 +380,33 @@ PHASES = [
                        "and every predicate correctly returns False against it, "
                        "then correctly returns True against a simulated total "
                        "failure of the same shape"},
+            {"name": "Simons/Reddington backfill — complete the rollout", "done": True,
+             "detail": "the Backfill History commit wired historical_rows() into "
+                       "Holmdel and Jackson but explicitly deferred Simons/"
+                       "Reddington, reasoning that reconstructing a full scored "
+                       "point (z-score, percentile, vol ratio) at an arbitrary past "
+                       "date was 'a different, larger shape of work.' Re-examined "
+                       "rather than carried forward: analyse() in telescope/"
+                       "series.py already treats the *last* point in a series' "
+                       "point list as 'now', purely by slicing (values[-1], "
+                       "values[-252:], etc.) — so calling it again on the same "
+                       "cached points with the final observation dropped "
+                       "reconstructs a genuine one-reading-back row with zero new "
+                       "math, just a shorter array. New shared helper, "
+                       "historical_panel() in telescope/series.py, does exactly "
+                       "that by reading each series' already-cached point list "
+                       "straight off disk (no network call) and re-running "
+                       "analyse() on points[:-1]. Wired into both Simons and "
+                       "Reddington in one line each. Verified against real, "
+                       "current data: 19/21 Simons series and 12/12 Reddington "
+                       "series produced a genuinely different level/z from their "
+                       "current reading (e.g. the 10Y Treasury's real close two "
+                       "days ago vs today), and clearing real accumulated "
+                       "snapshot history and re-sweeping both telescopes from "
+                       "scratch produced real first-sweep events (10Y/2Y Treasury "
+                       "and VIX climbing on Simons; PPI General Freight LTL "
+                       "becoming new leader on Reddington) instead of the usual "
+                       "silent-until-the-second-sweep gap"},
         ],
     },
 ]

@@ -44,7 +44,7 @@ from telescope import Column, Signal, Telescope
 from telescope.events import ClimberRule, NewLeaderRule, ThresholdRule, money
 from telescope.http import try_json, try_text
 from telescope.registry import register
-from telescope.series import Series, change, fetch_panel
+from telescope.series import Series, change, fetch_panel, historical_panel
 
 SEC_UA = {"User-Agent": "Observatory-Telescope/1.0 (thyfriendlyfox@gmail.com)"}
 SEC_DELAY = 0.15           # SEC asks for <=10 req/s; stay comfortably under
@@ -197,6 +197,9 @@ class Simons(Telescope):
 
     def collect(self, force=False):
         return fetch_panel(self, SERIES, self.ttl(force))
+
+    def historical_rows(self, rows):
+        return historical_panel(self, SERIES)
 
     # ── secondary panel: the shape of the curve right now ────────────────
     def context(self, force=False):

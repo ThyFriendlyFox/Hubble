@@ -190,3 +190,23 @@ def fetch_panel(scope, series, ttl, min_points=30):
     for src in seen_sources:
         scope.cache.cached(src, 0, lambda: True)
     return rows
+
+
+def historical_panel(scope, series, min_points=30):
+    """Reconstruct a real one-reading-back panel for historical_rows().
+
+    fetch_panel() just cached each series' full point history under
+    series_{key}. Dropping the latest observation and re-running analyse()
+    answers "what did this gauge look like as of the prior reading" with the
+    same statistics against real historical data — nothing fabricated, just
+    the array sliced one shorter.
+    """
+    rows = []
+    for s in series:
+        points = scope.cache.get(f"series_{s.key}", 10 ** 9)
+        if not points or len(points) < 2:
+            continue
+        row = analyse(s, points[:-1], min_points=min_points)
+        if row:
+            rows.append(row)
+    return rows
