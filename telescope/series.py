@@ -170,7 +170,17 @@ def fetch_panel(scope, series, ttl, min_points=30):
     """Fetch and analyse a whole panel, caching each series independently.
 
     A dead source yields an empty list rather than taking down the sweep, so
-    one delisted ticker can't blank the board.
+    one delisted ticker can't blank the board. `is_empty` closes the other
+    half of that: without it, a *transient* outage (FRED down for five
+    minutes) would write that same empty list to disk and get served as
+    truth for the rest of `ttl` — up to 6h for Reddington's monthly-cadence
+    gauges — silently dropping a series that was fine moments ago. Each
+    series has its own cache key here (unlike Holmdel's per-topic sources,
+    which share one file across all 32 topics and need an aggregate check),
+    so "this fetch came back empty" is already the correctly-scoped
+    per-series failure signal — every declared Series is an established,
+    actively-tracked indicator expected to always have history once it's
+    ever been fetched successfully.
     """
     rows, seen_sources = [], set()
     for s in series:
@@ -179,7 +189,8 @@ def fetch_panel(scope, series, ttl, min_points=30):
                 return ADAPTERS[s.source](s.ident)
             except Exception:
                 return []
-        points = scope.cache.cached(f"series_{s.key}", ttl, go)
+        points = scope.cache.cached(f"series_{s.key}", ttl, go,
+                                     is_empty=lambda r: not r)
         if not points:
             continue
         row = analyse(s, points, min_points=min_points)

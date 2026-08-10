@@ -541,6 +541,50 @@ PHASES = [
                        "and survive being run through the exact same rank() "
                        "pipeline a real sweep uses. Passed cleanly against real "
                        "current data for all six on the first run"},
+            {"name": "Cache resilience for telescope/series.py's fetch_panel()",
+             "done": True,
+             "detail": "Simons and Reddington's primary signal (every scored row "
+                       "on both boards comes through here) had the exact same "
+                       "cache-poisoning exposure that once briefly zeroed "
+                       "Holmdel's OpenAlex signal for half a day, just never "
+                       "found until checking every cache.cached() call across "
+                       "the fleet: a transient FRED/Yahoo/CoinGecko outage would "
+                       "write an empty points list to that series' cache file "
+                       "and get served as truth for the rest of ttl (up to 6h "
+                       "for Reddington's monthly-cadence gauges), silently "
+                       "dropping a series that was fine moments ago. Simpler "
+                       "than Holmdel's per-source predicates: each series here "
+                       "has its own cache key (unlike Holmdel's per-topic "
+                       "sources, which share one file across all 32 topics and "
+                       "need an aggregate check), and every declared Series is "
+                       "an established, actively-tracked indicator expected to "
+                       "always have history once ever fetched — so 'this fetch "
+                       "came back empty' is already the correctly-scoped "
+                       "per-series failure signal, one line: "
+                       "is_empty=lambda r: not r. Verified against real, current "
+                       "data: today's live fetch for a real Simons series (the "
+                       "10Y Treasury, 16,134 real cached points) is untouched by "
+                       "the predicate, then simulating a total outage on that "
+                       "exact series confirmed the real stale history is served "
+                       "instead of being overwritten with []. Also checked "
+                       "Jackson's and Kepler's own cache.cached() calls for the "
+                       "same gap while here — both still lack it, flagged below "
+                       "as separate follow-up work rather than folded in, since "
+                       "each needs its own shape-appropriate predicate the way "
+                       "Holmdel's five sources each did"},
+            {"name": "Cache resilience for Jackson's and Kepler's own sources",
+             "done": False,
+             "detail": "found while fixing the same gap in telescope/series.py: "
+                       "Jackson's USAspending recipient/PSC/award-count caches "
+                       "and Kepler's Form D filings/details/domains/hn/hiring "
+                       "caches all still lack an is_empty guard, so a transient "
+                       "outage on any of them would poison that cache for the "
+                       "rest of its ttl exactly like the bug that motivated the "
+                       "fix everywhere else. Not attempted this iteration: each "
+                       "needs its own shape-appropriate predicate designed with "
+                       "the same care as Holmdel's five (Kepler's filings in "
+                       "particular is a paginated multi-request fetch, not a "
+                       "single call, so 'empty' needs defining carefully there)"},
         ],
     },
 ]

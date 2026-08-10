@@ -17,13 +17,15 @@ from unittest.mock import patch                                  # noqa: E402
 import requests                                                   # noqa: E402
 
 from telescope import brief, http, notifier, ranking, registry    # noqa: E402
+from telescope import series                                     # noqa: E402
 from telescope.base import Telescope                             # noqa: E402
 from telescope.cache import Cache                                # noqa: E402
 from telescope.events import (ClimberRule, CrossoverRule, DeltaRule,  # noqa: E402
                               FlagFlipRule, NewEntrantRule, NewLeaderRule,
                               ThresholdRule)
 from telescope.ranking import Signal                             # noqa: E402
-from telescope.series import Series, analyse, change, historical_panel  # noqa: E402
+from telescope.series import (Series, analyse, change,               # noqa: E402
+                              fetch_panel, historical_panel)
 
 SIGNALS = (
     Signal("a", "a", "A"),
@@ -514,6 +516,36 @@ def test_historical_panel_skips_series_with_no_cached_points():
         s = Series("k", "K", "G", "index", "fred", "X")
         scope = FakeScope(cache)
         assert historical_panel(scope, (s,), min_points=30) == []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_fetch_panel_keeps_stale_series_over_a_transient_outage():
+    """Each series has its own cache key, so a transient outage on one
+    ticker must not overwrite its real cached history with an empty list
+    that then gets served as truth for the rest of ttl -- the same failure
+    mode that once briefly zeroed Holmdel's OpenAlex signal."""
+    class FakeScope:
+        def __init__(self, cache):
+            self.cache = cache
+
+    tmp = tempfile.mkdtemp()
+    try:
+        cache = Cache("test_fetch_panel_ns")
+        cache.dir = tmp
+        scope = FakeScope(cache)
+        s = Series("k", "K", "G", "index", "fred", "X")
+        good_points = _synthetic_points(60)
+
+        with patch.dict(series.ADAPTERS, {"fred": lambda ident: good_points}):
+            rows = fetch_panel(scope, (s,), ttl=3600, min_points=30)
+        assert len(rows) == 1
+
+        # Source goes down entirely on the next sweep (ttl=0 forces a miss).
+        with patch.dict(series.ADAPTERS, {"fred": lambda ident: []}):
+            rows_after_outage = fetch_panel(scope, (s,), ttl=0, min_points=30)
+        assert len(rows_after_outage) == 1
+        assert rows_after_outage[0]["level"] == good_points[-1][1]
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
