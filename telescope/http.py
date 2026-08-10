@@ -78,6 +78,17 @@ def try_json(url, default=None, **kw):
         return default
 
 
+def try_text(url, default=None, **kw):
+    """try_json's counterpart for sources that don't speak JSON — arXiv's
+    Atom feed, SEC's XML. Still gets the full retry/backoff policy: unlike
+    probe_text's speculative guesses, these are known-good APIs having an
+    occasional bad moment, which is exactly what retrying is for."""
+    try:
+        return get_text(url, **kw)
+    except SourceError:
+        return default
+
+
 def probe_text(url, timeout=6, headers=None):
     """A single-attempt, no-retry text fetch for speculative lookups where
     most guesses are expected to be wrong — e.g. guessing a company's domain

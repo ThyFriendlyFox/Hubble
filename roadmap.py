@@ -76,10 +76,31 @@ PHASES = [
                        "shared egress IP, not OpenAlex itself; restores paper_growth "
                        "and paper_recent to Holmdel on the same quoted-phrase, "
                        "two-window pattern as its HN signal"},
-            {"name": "arXiv via OAI-PMH", "done": False,
-             "detail": "arXiv's query API works fine unauthenticated with normal "
-                       "pacing (~1 req/3s) — bulk OAI-PMH harvest is still worth it "
-                       "as a second scholarly surface, not a fix for a block"},
+            {"name": "arXiv preprint velocity", "done": True,
+             "detail": "shipped via the simple REST query API, not OAI-PMH — its "
+                       "documented ~1-req/3s etiquette turned out to make the bulk-"
+                       "harvest protocol unnecessary. But a second, undocumented "
+                       "limit showed up under real sustained load that a short burst "
+                       "test didn't reveal: a full 32-topic sweep started drawing "
+                       "429s about twenty requests in and stayed throttled for the "
+                       "rest of that sweep, clearing again a few minutes later. Topic "
+                       "order now rotates by day so the same topics aren't always "
+                       "the ones that land before the throttle. Kept as its own "
+                       "signal rather than summed with OpenAlex's: OpenAlex already "
+                       "indexes arXiv, so combining counts would double-count the "
+                       "same papers. This was the highest-value item left standing "
+                       "precisely because OpenAlex has been quota-exhausted for "
+                       "several sweeps running — arXiv gives Holmdel a working "
+                       "research-adjacent signal again right now, and a second "
+                       "CrossoverRule (arxiv_growth -> repo_growth) keeps "
+                       "crossing_over observable through either scholarly surface "
+                       "being down independently of the other. Verifying this also "
+                       "caught a real bug in the *first* CrossoverRule, latent since "
+                       "it shipped: it never required the lagging signal to be "
+                       "newly elevated, so once arxiv_growth supplied a real "
+                       "non-None leading value, an unchanged snapshot compared "
+                       "against itself started firing every time — fixed in "
+                       "telescope/events.py, generic, not Holmdel-specific"},
             {"name": "GitHub repo velocity", "done": True,
              "detail": "new-repo creation velocity + peak stars, 180-day window vs "
                        "prior, on the same quoted-phrase pattern as HN/OpenAlex. The "

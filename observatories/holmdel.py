@@ -14,6 +14,7 @@ Sources (all public, no keys):
   Wikipedia pageviews     general curiosity, 60-day window vs the prior 60
   npm registry            builder adoption, where a topic has a canonical package
   OpenAlex                paper velocity, 180-day window vs the prior 180
+  arXiv                   preprint velocity, own signal — see below for why
   GitHub search           new-repo velocity + peak stars, 180-day window vs prior
 
 The cross-source **spread** signal is the honest core: an idea moving on one
@@ -32,6 +33,23 @@ every caller without a key, so it stays unusable here regardless of network;
 Crossref's query API is an OR match (a quoted three-word topic returns
 millions of rows), so its counts are not topic counts either.
 
+arXiv is a genuinely separate signal from OpenAlex, not folded into it:
+OpenAlex ingests arXiv preprints too, so summing the two counts would double
+count the same papers and present an inflated number as if it were clean —
+exactly the kind of confident-looking garbage this codebase tries to avoid.
+Kept apart, arXiv also buys real redundancy: OpenAlex's shared unauthenticated
+quota has been exhausted for this deployment for several sweeps running
+(self-inflicted from earlier testing volume, not a permanent block), which
+silently zeroed Holmdel's entire research signal and the crossing_over event
+built on it. arXiv's own query API turned out not to need the bulk OAI-PMH
+harvest originally assumed necessary for its documented ~1-req/3s etiquette —
+but it has a second, undocumented limit that etiquette alone doesn't clear: a
+short burst of requests raised no visible throttling, yet a full 32-topic
+sweep started drawing 429s about twenty requests in and stayed throttled for
+the rest of that sweep. Coverage is real but partial as a result — see
+`_arxiv` for how topic order is rotated by day so the same topics aren't
+always the ones that land before the throttle does.
+
 GitHub's search API is also unauthenticated-reachable, but its *search*
 endpoint carries a much stricter rate limit than the rest of GitHub's API —
 10 requests/minute, not the ~60/hour a first check of the wrong bucket
@@ -42,13 +60,14 @@ undercounted. Holmdel still tracks a curated watchlist rather than
 discovering topics on its own.
 """
 import datetime as dt
+import re
 import time
 from dataclasses import dataclass
 from urllib.parse import quote, quote_plus
 
 from telescope import Column, Signal, Telescope
 from telescope.events import ClimberRule, CrossoverRule, DeltaRule, NewLeaderRule
-from telescope.http import get_json, try_json
+from telescope.http import get_json, try_json, try_text
 from telescope.registry import register
 
 MIN_STORIES = 12        # below this, HN growth is noise and is not reported
@@ -58,6 +77,8 @@ RESEARCH_DAYS = 180     # OpenAlex comparison window — papers are sparser than
 MIN_PAPERS = 15         # below this combined count, paper growth is noise
 GITHUB_DAYS = 180       # GitHub comparison window — matches the research cadence
 MIN_REPOS = 6           # below this combined count, repo growth is noise
+ARXIV_DAYS = 180        # arXiv comparison window — same cadence as OpenAlex
+MIN_ARXIV = 15          # below this combined count, preprint growth is noise
 
 
 @dataclass(frozen=True)
@@ -170,18 +191,26 @@ class Holmdel(Telescope):
     glyph = "📡"
     tagline = "IDEA VELOCITY INDEX"
     entity_label = "TOPICS"
-    sources_label = "HACKER NEWS · WIKIPEDIA · NPM · OPENALEX · GITHUB"
+    sources_label = "HACKER NEWS · WIKIPEDIA · NPM · OPENALEX · ARXIV · GITHUB"
     caveat = ("Tracks a curated watchlist, so it can only see ideas someone "
               "already put on the list — it does not discover new topics yet. "
               "Research velocity is OpenAlex work counts on a quoted phrase "
-              "match, not citations, so it shows volume, not influence; "
-              "Semantic Scholar and arXiv's own APIs remain too rate-limited "
-              "unauthenticated to add as a second scholarly surface, and "
-              "Crossref's OR-match query API can't produce valid topic "
-              "counts. Repo velocity matches on GitHub repo name and "
-              "description only, not READMEs, and GitHub's search endpoint's "
-              "strict 10-req/min unauthenticated limit means a full sweep "
-              "takes several minutes.")
+              "match, not citations, so it shows volume, not influence. "
+              "arXiv is a genuinely separate preprint-velocity signal, kept "
+              "apart rather than summed with OpenAlex's — OpenAlex ingests "
+              "arXiv too, so combining them would double count the same "
+              "papers. arXiv also has an undocumented sustained-volume "
+              "throttle beyond its documented request pacing, so a sweep "
+              "often only covers some topics before it kicks in — which "
+              "topics rotates by day rather than always favouring the same "
+              "ones. Semantic Scholar's unauthenticated quota is a small "
+              "pool shared globally by every unkeyed caller and stays "
+              "unusable regardless of network; Crossref's OR-match query API "
+              "can't produce valid topic counts either. Repo velocity "
+              "matches on GitHub repo name and description only, not "
+              "READMEs, and GitHub's search endpoint's strict 10-req/min "
+              "unauthenticated limit means a full sweep takes several "
+              "minutes.")
 
     cache_ttl = 12 * 3600
     poll_seconds = 24 * 3600
@@ -190,24 +219,28 @@ class Holmdel(Telescope):
         Signal("velocity", "hn_growth", "ATTENTION VELOCITY"),
         Signal("curiosity", "wiki_growth", "CURIOSITY TREND"),
         Signal("research", "paper_growth", "RESEARCH VELOCITY"),
+        Signal("preprints", "arxiv_growth", "PREPRINT VELOCITY"),
         Signal("traction", "repo_growth", "REPO VELOCITY"),
         Signal("volume", "hn_recent", "STORY VOLUME", log=True),
         Signal("peak", "hn_points", "PEAK STORY", log=True),
         Signal("reach", "wiki_recent", "PUBLIC REACH", log=True),
         Signal("adoption", "npm_downloads", "BUILDER ADOPTION", log=True),
         Signal("papers", "paper_recent", "PAPER VOLUME", log=True),
+        Signal("arxiv_vol", "arxiv_recent", "PREPRINTS", log=True),
         Signal("repos", "repo_recent", "NEW REPOS", log=True),
         Signal("stars", "repo_stars", "PEAK REPO STARS", log=True),
         Signal("spread", "spread", "CROSS-SOURCE SPREAD"),
     )
     default_weights = {
-        "velocity": 22, "curiosity": 13, "research": 13, "traction": 13,
-        "volume": 6, "peak": 3, "reach": 6, "adoption": 4, "papers": 4,
-        "repos": 4, "stars": 2, "spread": 10,
+        "velocity": 20, "curiosity": 12, "research": 12, "preprints": 10,
+        "traction": 12, "volume": 5, "peak": 3, "reach": 5, "adoption": 3,
+        "papers": 3, "arxiv_vol": 3, "repos": 3, "stars": 2, "spread": 7,
     }
     # An idea moving on one independent surface is a rumour. Topics with no
     # growth reading on any of these get dampened rather than dropped.
-    quality_signals = ("velocity", "curiosity", "research", "traction")
+    quality_signals = (
+        "velocity", "curiosity", "research", "preprints", "traction",
+    )
 
     columns = (
         Column("name", "TOPIC", "text"),
@@ -220,6 +253,8 @@ class Holmdel(Telescope):
         Column("wiki_recent", "WIKI 60D", "int"),
         Column("paper_growth", "PAPER TREND", "pct"),
         Column("paper_recent", "PAPERS 180D", "int"),
+        Column("arxiv_growth", "ARXIV TREND", "pct"),
+        Column("arxiv_recent", "PREPRINTS 180D", "int"),
         Column("repo_growth", "REPO TREND", "pct"),
         Column("repo_recent", "REPOS 180D", "int"),
         Column("repo_stars", "TOP STARS", "int"),
@@ -256,6 +291,12 @@ class Holmdel(Telescope):
                      "({old_fmt} → {new_fmt} in 180 days).",
         ),
         DeltaRule(
+            field="arxiv_recent", direction="up", frac=0.75, min_abs=MIN_ARXIV,
+            type="research_signal",
+            headline="🔬 {name} preprints are accelerating — arXiv up {pct}% "
+                     "({old_fmt} → {new_fmt} in 180 days).",
+        ),
+        DeltaRule(
             field="repo_recent", direction="up", frac=0.75, min_abs=MIN_REPOS,
             type="repo_signal",
             headline="🛠 {name} is drawing builders — new repos up {pct}% "
@@ -265,6 +306,8 @@ class Holmdel(Telescope):
         # a topic with real paper growth last sweep, followed by real repo
         # growth this sweep — research becoming builders, not simultaneously
         # loud on both (that's just a broadly hot topic, not a crossover).
+        # Two independent leads to the same lagging signal, not duplicates:
+        # OpenAlex and arXiv can each be down independently of the other.
         CrossoverRule(
             leading_field="paper_growth", leading_min=40,
             lagging_field="repo_growth", lagging_min=75,
@@ -272,15 +315,23 @@ class Holmdel(Telescope):
                      "+{leading_value}% last sweep), builders are now "
                      "following (repos +{lagging_value}% this sweep).",
         ),
+        CrossoverRule(
+            leading_field="arxiv_growth", leading_min=40,
+            lagging_field="repo_growth", lagging_min=75,
+            headline="🔀 {name} crossed over — preprints led (arXiv "
+                     "+{leading_value}% last sweep), builders are now "
+                     "following (repos +{lagging_value}% this sweep).",
+        ),
     )
     snapshot_fields = (
         "hn_growth", "hn_recent", "hn_points", "wiki_growth", "wiki_recent",
-        "paper_growth", "paper_recent", "repo_growth", "repo_recent",
-        "repo_stars", "npm_downloads", "spread", "group",
+        "paper_growth", "paper_recent", "arxiv_growth", "arxiv_recent",
+        "repo_growth", "repo_recent", "repo_stars", "npm_downloads",
+        "spread", "group",
     )
 
     def source_keys(self):
-        return ["hn", "wikipedia", "npm", "openalex", "github"]
+        return ["hn", "wikipedia", "npm", "openalex", "arxiv", "github"]
 
     # ── sources ──────────────────────────────────────────────────────────
     def _hn(self, ttl):
@@ -381,6 +432,65 @@ class Holmdel(Telescope):
 
         return self.cache.cached("openalex", ttl, go, is_empty=totally_failed)
 
+    _ARXIV_TOTAL_RE = re.compile(
+        r"<opensearch:totalResults[^>]*>(\d+)</opensearch:totalResults>"
+    )
+
+    def _arxiv(self, ttl):
+        """Preprint count per topic, for two adjacent windows.
+
+        arXiv's query API honours quoted phrases like every other source
+        here — unquoted `all:state space model` matched 1.8M results in
+        testing, quoted it matched 3,240. Kept as its own signal rather than
+        combined with OpenAlex's — see the module docstring: OpenAlex
+        already indexes arXiv, so summing the two would double count the
+        same papers and present an inflated number as if it were clean.
+
+        arXiv has a real, *undocumented* sustained-volume throttle on top of
+        its documented ~1-req/3s etiquette: a short burst of rapid requests
+        raised no visible rate limiting in testing, but a full 32-topic
+        sweep (64 requests, paced) started drawing 429s roughly twenty
+        requests in and stayed throttled for the rest of that sweep, only
+        clearing again a few minutes later. Retrying harder within one sweep
+        wouldn't help — the block outlasts the retry/backoff a single
+        request gets. Topics are rotated by day of year instead, so a sweep
+        that only gets through the first ~10 before throttling doesn't
+        permanently favour the same topics every day; over a run of sweeps
+        every topic gets a turn at the front of the queue.
+        """
+        def go():
+            today = dt.date.today()
+            span = dt.timedelta(days=ARXIV_DAYS)
+            # Deterministic, not random: reproducible from the date alone,
+            # and it still spreads which topics land before the throttle.
+            offset = today.timetuple().tm_yday % len(TOPICS)
+            rotated = TOPICS[offset:] + TOPICS[:offset]
+            out = {}
+            for t in rotated:
+                def window(start, end):
+                    q = quote_plus(
+                        f'all:"{t.query}" AND submittedDate:'
+                        f"[{start:%Y%m%d}000000 TO {end:%Y%m%d}000000]"
+                    )
+                    xml = try_text(
+                        "http://export.arxiv.org/api/query"
+                        f"?search_query={q}&max_results=1",
+                        default=None,
+                    )
+                    m = self._ARXIV_TOTAL_RE.search(xml or "")
+                    return int(m.group(1)) if m else None
+
+                recent = window(today - span, today)
+                prior = window(today - 2 * span, today - span)
+                out[t.key] = {"recent": recent, "prior": prior}
+                time.sleep(3.0)     # arXiv's documented etiquette: ~1 req/3s
+            return out
+
+        def totally_failed(result):
+            return not any(v.get("recent") is not None for v in result.values())
+
+        return self.cache.cached("arxiv", ttl, go, is_empty=totally_failed)
+
     def _github(self, ttl):
         """New-repo creation velocity per topic, for two adjacent windows.
 
@@ -447,6 +557,7 @@ class Holmdel(Telescope):
         wiki = self._wiki(ttl)
         npm = self._npm(ttl)
         openalex = self._openalex(ttl)
+        arxiv = self._arxiv(ttl)
         github = self._github(ttl)
 
         rows = []
@@ -454,12 +565,14 @@ class Holmdel(Telescope):
             h = hn.get(t.key) or {}
             w = wiki.get(t.key) or {}
             p = openalex.get(t.key) or {}
+            a = arxiv.get(t.key) or {}
             g = github.get(t.key) or {}
             downloads = npm.get(t.key)
 
             hn_recent, hn_prior = h.get("recent"), h.get("prior")
             wiki_recent, wiki_prior = w.get("recent"), w.get("prior")
             paper_recent, paper_prior = p.get("recent"), p.get("prior")
+            arxiv_recent, arxiv_prior = a.get("recent"), a.get("prior")
             repo_recent, repo_prior = g.get("recent"), g.get("prior")
 
             # Spread: how many independent surfaces actually report this topic.
@@ -468,6 +581,7 @@ class Holmdel(Telescope):
                 bool(wiki_recent),
                 bool(downloads),
                 bool(paper_recent),
+                bool(arxiv_recent),
                 bool(repo_recent),
             ])
             rows.append({
@@ -486,17 +600,21 @@ class Holmdel(Telescope):
                 "paper_recent": paper_recent,
                 "paper_prior": paper_prior,
                 "paper_growth": _growth(paper_recent, paper_prior, floor=MIN_PAPERS),
+                "arxiv_recent": arxiv_recent,
+                "arxiv_prior": arxiv_prior,
+                "arxiv_growth": _growth(arxiv_recent, arxiv_prior, floor=MIN_ARXIV),
                 "repo_recent": repo_recent,
                 "repo_prior": repo_prior,
                 "repo_growth": _growth(repo_recent, repo_prior, floor=MIN_REPOS),
                 "repo_stars": g.get("stars") or None,
                 "npm_downloads": downloads,
                 # Scaled 0-100 so it blends like every other signal.
-                "spread": round(spread / 5 * 100, 1),
+                "spread": round(spread / 6 * 100, 1),
                 "sources": (["hn"] if hn_recent else []) +
                            (["wikipedia"] if wiki_recent else []) +
                            (["npm"] if downloads else []) +
                            (["openalex"] if paper_recent else []) +
+                           (["arxiv"] if arxiv_recent else []) +
                            (["github"] if repo_recent else []) or ["hn"],
                 # A topic no surface reports is not evidence of anything.
                 "noise": spread == 0,
@@ -519,10 +637,11 @@ class Holmdel(Telescope):
             hn_recent = r.get("hn_prior")
             wiki_recent = r.get("wiki_prior")
             paper_recent = r.get("paper_prior")
+            arxiv_recent = r.get("arxiv_prior")
             repo_recent = r.get("repo_prior")
             spread = sum([
-                bool(hn_recent), bool(wiki_recent),
-                bool(paper_recent), bool(repo_recent),
+                bool(hn_recent), bool(wiki_recent), bool(paper_recent),
+                bool(arxiv_recent), bool(repo_recent),
             ])
             out.append({
                 "key": r["key"], "name": r["name"], "group": r.get("group"),
@@ -533,13 +652,16 @@ class Holmdel(Telescope):
                 "wiki_growth": None,
                 "paper_recent": paper_recent, "paper_prior": None,
                 "paper_growth": None,
+                "arxiv_recent": arxiv_recent, "arxiv_prior": None,
+                "arxiv_growth": None,
                 "repo_recent": repo_recent, "repo_prior": None,
                 "repo_growth": None, "repo_stars": None,
                 "npm_downloads": None,
-                "spread": round(spread / 5 * 100, 1),
+                "spread": round(spread / 6 * 100, 1),
                 "sources": (["hn"] if hn_recent else []) +
                            (["wikipedia"] if wiki_recent else []) +
                            (["openalex"] if paper_recent else []) +
+                           (["arxiv"] if arxiv_recent else []) +
                            (["github"] if repo_recent else []) or ["hn"],
                 "noise": spread == 0,
             })
