@@ -11,8 +11,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import shutil                                                     # noqa: E402
 import tempfile                                                   # noqa: E402
+from unittest.mock import patch                                  # noqa: E402
 
-from telescope import brief, ranking                             # noqa: E402
+import requests                                                   # noqa: E402
+
+from telescope import brief, http, ranking                       # noqa: E402
 from telescope.base import Telescope                             # noqa: E402
 from telescope.cache import Cache                                # noqa: E402
 from telescope.events import (ClimberRule, CrossoverRule, DeltaRule,  # noqa: E402
@@ -512,3 +515,92 @@ def test_historical_panel_skips_series_with_no_cached_points():
         assert historical_panel(scope, (s,), min_points=30) == []
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── http retry policy ────────────────────────────────────────────────────
+# _request()'s retry/no-retry branching had a real bug (a plain 404 used to
+# fall into the same retry loop as a rate limit, wasting ~2.5s of backoff on
+# an expected-common case like guessing a job-board slug that doesn't
+# exist — fixed, but never pinned by a test). Mocked here rather than hitting
+# real network: what's under test is the branching, not any one API.
+class _FakeResponse:
+    def __init__(self, status_code, json_data=None, text=""):
+        self.status_code = status_code
+        self._json_data = json_data
+        self.text = text
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"{self.status_code} error")
+
+    def json(self):
+        return self._json_data
+
+
+def test_request_retries_429_then_succeeds():
+    """A rate limit is worth retrying -- confirms a source recovering
+    mid-backoff still produces a result rather than giving up early."""
+    responses = [_FakeResponse(429), _FakeResponse(200, json_data={"ok": True})]
+    with patch("telescope.http.requests.request", side_effect=responses) as mock_req, \
+         patch("telescope.http.time.sleep"):
+        assert http.get_json("https://example.test/x") == {"ok": True}
+    assert mock_req.call_count == 2
+
+
+def test_request_does_not_retry_a_plain_404():
+    """The regression test for the bug described above: a 404 means 'no
+    such resource', not 'try again', and must not sleep/retry at all."""
+    with patch("telescope.http.requests.request",
+               return_value=_FakeResponse(404)) as mock_req, \
+         patch("telescope.http.time.sleep") as mock_sleep:
+        try:
+            http.get_json("https://example.test/missing")
+            assert False, "expected SourceError"
+        except http.SourceError:
+            pass
+    assert mock_req.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+def test_request_retries_5xx_until_exhausted():
+    with patch("telescope.http.requests.request",
+               return_value=_FakeResponse(503)) as mock_req, \
+         patch("telescope.http.time.sleep"):
+        try:
+            http.get_json("https://example.test/down")
+            assert False, "expected SourceError"
+        except http.SourceError:
+            pass
+    assert mock_req.call_count == http.RETRIES
+
+
+def test_request_retries_network_exceptions_until_exhausted():
+    with patch("telescope.http.requests.request",
+               side_effect=requests.ConnectionError("boom")) as mock_req, \
+         patch("telescope.http.time.sleep"):
+        try:
+            http.get_json("https://example.test/unreachable")
+            assert False, "expected SourceError"
+        except http.SourceError:
+            pass
+    assert mock_req.call_count == http.RETRIES
+
+
+def test_try_json_returns_default_on_permanent_failure():
+    with patch("telescope.http.requests.request",
+               return_value=_FakeResponse(404)), \
+         patch("telescope.http.time.sleep"):
+        assert http.try_json("https://example.test/missing",
+                             default="fallback") == "fallback"
+
+
+def test_probe_text_makes_exactly_one_attempt():
+    """probe_text is for speculative guesses (most wrong, e.g. a guessed
+    company domain) -- it must never retry, unlike get_text/try_text's
+    known-good-API backoff policy. A regression here would turn a batch of
+    32 domain guesses into minutes of pure waste, the same failure mode the
+    404-retry bug caused elsewhere."""
+    with patch("telescope.http.requests.get",
+               side_effect=requests.ConnectionError("boom")) as mock_get:
+        assert http.probe_text("https://guessed-domain.test/") is None
+    assert mock_get.call_count == 1

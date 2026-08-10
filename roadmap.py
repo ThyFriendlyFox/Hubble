@@ -454,6 +454,27 @@ PHASES = [
                        "the-cache reconstruction against a real Cache instance on "
                        "a throwaway tmp dir (both the happy path and the no-"
                        "cache-yet path)"},
+            {"name": "Kernel test coverage for telescope/http.py", "done": True,
+             "detail": "_request()'s retry/no-retry branching is exactly the kind "
+                       "of logic that already caused a real bug once (a plain 404 "
+                       "used to fall into the same retry loop as a rate limit, "
+                       "wasting ~2.5s of backoff on an expected-common case like a "
+                       "guessed job-board slug) and had zero tests pinning the fix "
+                       "— a future edit could silently reintroduce it. Re-checked "
+                       "every blocked source live again first rather than assume: "
+                       "SAM.gov (404), Semantic Scholar (429), SBIR (429 'not "
+                       "available at this time') all still blocked, nothing newly "
+                       "actionable. Added 6 tests mocking requests.request/"
+                       "requests.get directly (what's under test is the "
+                       "branching, not any one real API): 429 retries then "
+                       "recovers, a plain 404 is not retried at all and sleeps "
+                       "zero times (the actual regression test for the bug "
+                       "above), 5xx and network exceptions each retry exactly "
+                       "RETRIES times before giving up, try_json falls back to "
+                       "its default on a permanent failure, and probe_text makes "
+                       "exactly one attempt on failure — never retries — since "
+                       "its whole purpose is staying cheap across a batch of "
+                       "speculative guesses that are mostly wrong"},
         ],
     },
 ]
