@@ -244,3 +244,33 @@ class CrossoverRule:
             "lagging_value": round(lag, 1),
         }
         return [_event(self.type, curr, ts, _fmt(self.headline, curr, extra), extra)]
+
+
+@dataclass
+class FlagFlipRule:
+    """Fires when a boolean field flips between two snapshots — signal-
+    quality feedback, generalised: a detection "proving out" is exactly a
+    flag that used to be one thing no longer being so. Kepler's `stealth`
+    is the reference case — a raise with zero public footprint can only
+    ever go stealth -> not-stealth (an HN story appearing is permanent;
+    Kepler's own economics never change after a filing), never the other
+    way, so `from_value`/`to_value` deliberately aren't assumed symmetric.
+    """
+    field: str = ""
+    from_value: bool = True
+    to_value: bool = False
+    type: str = "flag_flip"
+    headline: str = "{name} — {field} changed."
+
+    def board(self, prev_rows, curr_rows, ts):
+        return []
+
+    def row(self, prev, curr, ts):
+        if prev is None:
+            return []
+        old, new = prev.get(self.field), curr.get(self.field)
+        if old is None or new is None:
+            return []
+        if bool(old) != self.from_value or bool(new) != self.to_value:
+            return []
+        return [_event(self.type, curr, ts, _fmt(self.headline, curr, {}))]

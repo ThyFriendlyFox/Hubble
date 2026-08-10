@@ -14,7 +14,8 @@ a stealth raise, detected.
 
 Kepler ranks those issuers by how interesting the raise looks, cross-checks
 each against public attention (Hacker News) and hiring signal, and announces
-new ones as they appear.
+new ones as they appear — and, when a stealth flag it raised earlier turns
+out to have been right, says so: see "signal-quality feedback" below.
 
 Sources (all public, no keys):
   SEC EDGAR daily index   every Form D / D-A filed, by day
@@ -74,6 +75,20 @@ mapping is hand-curated and approximate — SEC's finite industry list has no
 generic tech/manufacturing bucket — and it disappears entirely if Holmdel is
 disabled, or if nothing has crossed over in the last 30 days, which is the
 common case, not a bug.
+
+── Signal-quality feedback: did Kepler beat the intro? ──────────────────────
+`stealth` can only ever go True -> False for a given issuer, never the other
+way: an HN story appearing is permanent, and a filing's own economics never
+change after it's submitted. That makes the transition unambiguous — it's
+the exact moment a detection Kepler made with zero public footprint gets its
+first public confirmation, which is what "did Kepler beat the intro" is
+actually asking. No real graduation has happened yet in this deployment's
+own history (accumulated snapshots are still hours old, and a company's
+first-ever HN story landing in exactly the window between two 12h sweeps is
+a genuinely low-probability event on any given day, the same way Holmdel's
+crossing_over was rare before it wasn't) — verified instead against a real
+issuer row with `stealth` patched to simulate the transition, the same
+approach used to verify crossing_over before it had ever fired for real.
 """
 import datetime as dt
 import re
@@ -82,7 +97,8 @@ import traceback
 from urllib.parse import quote_plus, urlparse
 
 from telescope import Column, Signal, Telescope
-from telescope.events import ClimberRule, DeltaRule, NewEntrantRule, NewLeaderRule, money
+from telescope.events import (ClimberRule, DeltaRule, FlagFlipRule,
+                              NewEntrantRule, NewLeaderRule, money)
 from telescope.http import get_json, get_text, probe_text, try_json
 from telescope.registry import get as get_telescope, is_enabled, register
 
@@ -239,7 +255,10 @@ class Kepler(Telescope):
               "hand-mapped, approximate industry-to-field table, only "
               "appears while Holmdel is enabled, and is usually empty — "
               "nothing crossing over in the last 30 days is the common "
-              "case, not a bug.")
+              "case, not a bug. A GRADUATED event fires the one time a "
+              "stealth flag is actually confirmed — the issuer's first "
+              "real HN story — which can take a while to happen for any "
+              "single company and may not have happened yet at all.")
 
     cache_ttl = 6 * 3600
     poll_seconds = 12 * 3600
@@ -299,6 +318,18 @@ class Kepler(Telescope):
             type="hiring_surge",
             headline="👷 {name} is hiring fast — open roles up {pct}% "
                      "({old_fmt} → {new_fmt}).",
+        ),
+        # Signal-quality feedback: stealth can only ever go True -> False (an
+        # HN story appearing is permanent; the filing's own economics never
+        # change), so this is the one direction worth watching — the exact
+        # moment a detection Kepler made with zero public footprint gets its
+        # first public confirmation.
+        FlagFlipRule(
+            field="stealth", from_value=True, to_value=False,
+            type="stealth_graduated",
+            headline="🎓 {name} graduated from stealth — Kepler flagged "
+                     "{raise_fmt} raised with zero public footprint, and it "
+                     "just picked up its first Hacker News attention.",
         ),
     )
     snapshot_fields = (

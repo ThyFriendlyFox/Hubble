@@ -313,8 +313,24 @@ PHASES = [
                        "accumulated events, not synthetic data"},
             {"name": "Channels", "done": False,
              "detail": "Discord and Slack are wired; X needs credentials"},
-            {"name": "Signal-quality feedback", "done": False,
-             "detail": "track which detections proved out — did Kepler beat the intro?"},
+            {"name": "Signal-quality feedback", "done": True,
+             "detail": "new kernel rule shape, FlagFlipRule in telescope/events.py — "
+                       "generic, not Kepler-specific: fires when a boolean field "
+                       "flips between two snapshots. Wired to Kepler's stealth flag "
+                       "(True -> False only, the one direction that's possible: an "
+                       "HN story appearing is permanent, a filing's economics never "
+                       "change) as a GRADUATED event — the exact moment a detection "
+                       "made with zero public footprint gets its first public "
+                       "confirmation, which is what 'did Kepler beat the intro' is "
+                       "actually asking. No real graduation has happened yet in this "
+                       "deployment's own history — checked the accumulated snapshot "
+                       "history first rather than assume (only 2 real snapshots "
+                       "exist so far, zero flips) — so verified against a real "
+                       "issuer row with the field patched to simulate the "
+                       "transition, the same approach used for crossing_over before "
+                       "it had ever fired for real. Confirmed the generic diff-"
+                       "roundtrip test doesn't spuriously fire it on unrelated "
+                       "changes"},
         ],
     },
 ]

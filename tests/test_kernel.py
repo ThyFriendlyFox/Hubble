@@ -16,7 +16,8 @@ from telescope import brief, ranking                             # noqa: E402
 from telescope.base import Telescope                             # noqa: E402
 from telescope.cache import Cache                                # noqa: E402
 from telescope.events import (ClimberRule, CrossoverRule, DeltaRule,  # noqa: E402
-                              NewEntrantRule, NewLeaderRule, ThresholdRule)
+                              FlagFlipRule, NewEntrantRule, NewLeaderRule,
+                              ThresholdRule)
 from telescope.ranking import Signal                             # noqa: E402
 
 SIGNALS = (
@@ -374,6 +375,26 @@ def test_none_field_renders_as_a_dash_not_the_word_none():
     events = rule.row({"rank": 5, "score": 1}, {"name": "n", "rank": 1, "score": 1,
                                                  "hn_growth": None}, 0)
     assert events[0]["headline"] == "n moved (HN —%)."
+
+
+# ── signal-quality feedback ──────────────────────────────────────────────
+def test_flag_flip_rule_fires_only_on_the_declared_direction():
+    """Kepler's 'stealth graduated' shape: a detection proving out is a flag
+    that used to be true no longer being so. Must not fire the other way,
+    on an unrelated field, or when the flag was already flipped before."""
+    rule = FlagFlipRule(field="stealth", from_value=True, to_value=False,
+                        headline="{name} graduated.")
+    assert rule.row({"stealth": True}, {"name": "n", "stealth": False}, 0)
+    # Wrong direction -- gaining stealth isn't a graduation.
+    assert rule.row({"stealth": False}, {"name": "n", "stealth": True}, 0) == []
+    # Already flipped -- not a new transition.
+    assert rule.row({"stealth": False}, {"name": "n", "stealth": False}, 0) == []
+    # Never was stealth -- nothing to graduate from.
+    assert rule.row({"stealth": True}, {"name": "n", "stealth": True}, 0) == []
+    # Field simply absent on either side -- no false fire.
+    assert rule.row({}, {"name": "n", "stealth": False}, 0) == []
+    assert rule.row({"stealth": True}, {"name": "n"}, 0) == []
+    assert rule.row(None, {"name": "n", "stealth": False}, 0) == []
 
 
 # ── morning brief ──────────────────────────────────────────────────────────

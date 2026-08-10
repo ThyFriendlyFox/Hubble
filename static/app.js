@@ -582,6 +582,7 @@ const ETYPE_LABEL = {
   regime_change: "REGIME", stealth_raise: "STEALTH", faint_signal: "FAINT SIGNAL",
   breakout: "BREAKOUT", crossing_over: "CROSSOVER", rate_spike: "RATE SPIKE",
   rate_drop: "RATE DROP", congestion: "CONGESTION",
+  hiring_surge: "HIRING", stealth_graduated: "GRADUATED",
 };
 
 let feedEvents = [];
