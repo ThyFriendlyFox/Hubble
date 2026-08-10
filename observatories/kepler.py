@@ -426,7 +426,15 @@ class Kepler(Telescope):
                     out[f["cik"]] = d
                 time.sleep(SEC_DELAY)
             return out
-        return self.cache.cached("details", ttl, go)
+        # Unlike _domains()/_hiring(), _detail() only ever returns None on a
+        # genuine fetch failure (get_text() raising) -- _tag()/_num() are
+        # regex/try-except helpers that never raise, so every filing whose
+        # primary_doc.xml is actually reachable adds a real entry to out,
+        # regardless of how sparse its individual fields are. An aggregate-
+        # empty result across a real batch of filings is therefore a total
+        # outage, not "no economics data found" -- no canary needed, same
+        # reasoning as _filings()/_hn().
+        return self.cache.cached("details", ttl, go, is_empty=lambda r: not r)
 
     def _domains(self, names, ttl):
         """A guessed .com domain per issuer, verified against the fetched

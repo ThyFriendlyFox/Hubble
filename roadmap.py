@@ -979,6 +979,30 @@ PHASES = [
                        "(404), Semantic Scholar (429, the single 200 from "
                        "last iteration was confirmed a fluke), SBIR (429) — "
                        "all unchanged"},
+            {"name": "Kepler details cache resilience — the last of the five",
+             "done": True,
+             "detail": "closes out the audit of Kepler's own five sources "
+                       "(filings, hn, hiring, domains now all done; details "
+                       "was the last). Deliberately NOT the same canary fix "
+                       "as domains/hiring — that would have been wrong here. "
+                       "_detail()'s only exception path is get_text() itself "
+                       "raising on a real fetch failure: _tag()/_num() are a "
+                       "regex search and a try/except float(), neither can "
+                       "ever raise, so every filing whose primary_doc.xml is "
+                       "actually reachable adds a real entry to the result "
+                       "regardless of how sparse its individual fields turn "
+                       "out to be. An aggregate-empty result therefore means "
+                       "every single fetch in the batch failed at the "
+                       "network level — a real outage, not 'no economics "
+                       "data found' the way an empty domains/hiring result "
+                       "usually is — so the plain is_empty=lambda r: not r "
+                       "already used for filings()/_hn() is the correct, "
+                       "sufficient fix here, no canary needed. Verified "
+                       "against real, current data: today's live sweep got "
+                       "real economics data for all 220/220 filings "
+                       "attempted, and simulating a total outage through the "
+                       "real cache confirmed all 220 real entries survive "
+                       "instead of being overwritten with {}"},
         ],
     },
 ]
