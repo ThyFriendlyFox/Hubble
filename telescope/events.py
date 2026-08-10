@@ -199,6 +199,12 @@ class CrossoverRule:
     from "still high" without a third point. "Leading was elevated, lagging
     is elevated now" is an honest, checkable claim; "and receding" is not,
     with only two samples.
+
+    It DOES require the lagging signal to be newly elevated — absent or
+    below its bar last sweep, above it now. Without that, a topic that
+    simply stays elevated on both fields sweep after sweep would refire the
+    same "crossover" every single time nothing has actually changed, which
+    is exactly backwards: a crossover is a transition, not a steady state.
     """
     leading_field: str = ""
     leading_min: float = 0.0     # leading_field in the PREVIOUS row must clear this
@@ -219,6 +225,9 @@ class CrossoverRule:
             return []
         if lead < self.leading_min or lag < self.lagging_min:
             return []
+        lag_before = prev.get(self.lagging_field)
+        if lag_before is not None and lag_before >= self.lagging_min:
+            return []    # already elevated last sweep too -- not a new crossing
         extra = {
             "leading_value": round(lead, 1),
             "lagging_value": round(lag, 1),

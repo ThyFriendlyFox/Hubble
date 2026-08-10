@@ -350,6 +350,11 @@ def test_crossover_rule_reads_leading_from_prev_and_lagging_from_curr():
     # Either field simply absent (signal never populated) -- no false fire.
     assert rule.row({}, curr, 0) == []
     assert rule.row(prev, {"name": "n"}, 0) == []
+    # Lagging was ALREADY elevated last sweep too -- a steady state, not a
+    # transition. Found live: with a real, non-None leading signal, an
+    # unchanged snapshot compared against itself was firing every time,
+    # since nothing previously required the lagging signal to be new.
+    assert rule.row({"paper_growth": 60, "repo_growth": 90}, curr, 0) == []
 
 
 def test_bad_headline_template_does_not_raise():
