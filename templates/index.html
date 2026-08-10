@@ -66,6 +66,7 @@
           </div>
           <label class="chk"><input type="checkbox" id="hide-noise" checked /> HIDE NOISE</label>
           <label class="chk"><input type="checkbox" id="scored-only" /> SCORED ONLY</label>
+          <label class="chk"><input type="checkbox" id="watched-only" /> ★ WATCHED ONLY</label>
           <div class="spacer"></div>
           <button id="reset-weights" class="btn ghost">RESET WEIGHTS</button>
         </div>
@@ -94,6 +95,7 @@
     <div class="view" id="view-feed" hidden>
       <section class="feed-section">
         <div class="section-label"><span>01</span> DETECTED EVENTS · ALL ENABLED TELESCOPES</div>
+        <label class="chk feed-watched-toggle"><input type="checkbox" id="feed-watched-only" /> ★ WATCHED ONLY</label>
         <div id="feed" class="feed"></div>
       </section>
     </div>

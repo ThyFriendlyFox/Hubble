@@ -16,7 +16,46 @@ let state = {
   search: "",
   scoredOnly: false,
   hideNoise: true,
+  watchedOnly: false,
+  feedWatchedOnly: false,
 };
+
+/* ── watchlist — per-entity, per telescope, persisted in localStorage ──
+   Deliberately client-side, same reasoning as saved views: there's no user
+   account for a server to attach this to, and it's meaningless without the
+   browser that set it. "Alerts" here means surfacing what's already in the
+   merged event feed for entities you've starred, not a push mechanism —
+   there's no delivery channel to push through when nobody's looking. */
+const WATCHLIST_KEY = "observatory_watchlist";
+
+function loadWatchlist() {
+  try {
+    return JSON.parse(localStorage.getItem(WATCHLIST_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+function saveWatchlist(all) {
+  try {
+    localStorage.setItem(WATCHLIST_KEY, JSON.stringify(all));
+  } catch {
+    /* storage full or disabled — watches just won't persist */
+  }
+}
+function isWatched(slug, key) {
+  const all = loadWatchlist();
+  return !!(slug && key && (all[slug] || []).includes(key));
+}
+function toggleWatch(slug, key) {
+  if (!slug || !key) return;
+  const all = loadWatchlist();
+  const list = all[slug] || [];
+  const i = list.indexOf(key);
+  if (i >= 0) list.splice(i, 1);
+  else list.push(key);
+  all[slug] = list;
+  saveWatchlist(all);
+}
 
 /* ── formatters ─────────────────────────────── */
 function fmtNum(n) {
@@ -162,6 +201,13 @@ function wireTipDelegation(container) {
 wireTipDelegation($("#rows"));
 wireTipDelegation($("#podium"));
 
+$("#rows").addEventListener("click", (e) => {
+  const cell = e.target.closest(".watch-cell");
+  if (!cell) return;
+  toggleWatch(state.slug, cell.dataset.key);
+  render();
+});
+
 /* ── observatory catalog + switcher ─────────── */
 async function loadCatalog() {
   const r = await fetch("/api/observatory");
@@ -302,7 +348,7 @@ function applyIdentity(data) {
 function renderHead() {
   const cols = state.meta.columns;
   $("#thead-row").innerHTML =
-    `<th class="left" data-sort="rank">#</th>` +
+    `<th class="watch-th"></th><th class="left" data-sort="rank">#</th>` +
     cols
       .map(
         (c) =>
@@ -425,6 +471,7 @@ function filtered() {
     );
   }
   if (state.scoredOnly) rows = rows.filter((r) => r.score !== null);
+  if (state.watchedOnly) rows = rows.filter((r) => isWatched(state.slug, r.key));
   const { key, dir } = state.sort;
   return [...rows].sort((a, b) => {
     let av = a[key], bv = b[key];
@@ -491,7 +538,9 @@ function render() {
           return `<td class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}">${cell(r, c)}</td>`;
         })
         .join("");
+      const watched = isWatched(state.slug, r.key);
       return `<tr class="${r.rank === 1 ? "top1" : ""}">
+        <td class="watch-cell${watched ? " on" : ""}" data-key="${r.key}">${watched ? "★" : "☆"}</td>
         <td class="rankcell left">${String(r.rank).padStart(2, "0")}</td>${tds}</tr>`;
     })
     .join("");
@@ -535,35 +584,52 @@ const ETYPE_LABEL = {
   rate_drop: "RATE DROP", congestion: "CONGESTION",
 };
 
+let feedEvents = [];
+
 async function loadFeed() {
   try {
     const r = await fetch("/api/observatory/whats-new?limit=40");
     const data = await r.json();
-    const el = $("#feed");
-    if (!data.events || !data.events.length) {
-      el.innerHTML = `<div class="feed-empty">Calibrating — the observatory announces changes after its second sweep of each telescope.</div>`;
-      return;
-    }
-    el.innerHTML = data.events
-      .map((e) => {
-        const head = e.link
-          ? e.headline.replace(
-              e.name,
-              `<a href="${e.link}" target="_blank" rel="noopener">${e.name}</a>`
-            )
-          : e.headline;
-        return `<div class="feed-item t-${e.type}">
-          <span class="dot"></span>
-          <span class="escope">${e.glyph || "🔭"} ${e.telescope_name || e.telescope || ""}</span>
-          <span class="etype">${ETYPE_LABEL[e.type] || e.type}</span>
-          <span class="ehead">${head}</span>
-          <span class="etime">${ago(Date.now() / 1000 - e.ts)}</span>
-        </div>`;
-      })
-      .join("");
+    feedEvents = data.events || [];
+    renderFeed();
   } catch (e) {
     $("#feed").innerHTML = `<div class="feed-empty">⚠ ${e}</div>`;
   }
+}
+
+function renderFeed() {
+  const el = $("#feed");
+  let events = feedEvents;
+  if (state.feedWatchedOnly) {
+    events = events.filter((e) => isWatched(e.telescope, e.key));
+  }
+  if (!events.length) {
+    el.innerHTML = `<div class="feed-empty">${
+      feedEvents.length
+        ? "No events for your watchlist yet."
+        : "Calibrating — the observatory announces changes after its second sweep of each telescope."
+    }</div>`;
+    return;
+  }
+  el.innerHTML = events
+    .map((e) => {
+      const head = e.link
+        ? e.headline.replace(
+            e.name,
+            `<a href="${e.link}" target="_blank" rel="noopener">${e.name}</a>`
+          )
+        : e.headline;
+      const watched = isWatched(e.telescope, e.key);
+      return `<div class="feed-item t-${e.type}${watched ? " watched" : ""}">
+        <span class="dot"></span>
+        ${watched ? '<span class="wstar" title="On your watchlist">★</span>' : ""}
+        <span class="escope">${e.glyph || "🔭"} ${e.telescope_name || e.telescope || ""}</span>
+        <span class="etype">${ETYPE_LABEL[e.type] || e.type}</span>
+        <span class="ehead">${head}</span>
+        <span class="etime">${ago(Date.now() / 1000 - e.ts)}</span>
+      </div>`;
+    })
+    .join("");
 }
 
 /* ── roadmap ────────────────────────────────── */
@@ -613,6 +679,8 @@ $("#tabs").addEventListener("click", (e) => {
 $("#search").addEventListener("input", (e) => { state.search = e.target.value; render(); });
 $("#scored-only").addEventListener("change", (e) => { state.scoredOnly = e.target.checked; render(); });
 $("#hide-noise").addEventListener("change", (e) => { state.hideNoise = e.target.checked; render(); });
+$("#watched-only").addEventListener("change", (e) => { state.watchedOnly = e.target.checked; render(); });
+$("#feed-watched-only").addEventListener("change", (e) => { state.feedWatchedOnly = e.target.checked; renderFeed(); });
 $("#refresh").addEventListener("click", () => load(true));
 $("#reset-weights").addEventListener("click", () => { state.weights = {}; load(false); });
 $("#save-view").addEventListener("click", saveCurrentView);

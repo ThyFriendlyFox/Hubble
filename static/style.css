@@ -266,6 +266,19 @@ td.name a:hover { text-decoration: underline; }
 .scorecell { color: var(--ink); font-weight: 600; }
 .dim { color: var(--ink-faint); }
 
+/* ── watchlist ─────────────────────────────── */
+.watch-th { width: 28px; }
+.watch-cell {
+  width: 28px; text-align: center !important; cursor: pointer;
+  color: var(--ink-faint); font-size: 13px; user-select: none;
+}
+.watch-cell:hover { color: var(--ink); }
+.watch-cell.on { color: var(--paper); }
+tbody tr.top1 .watch-cell.on { color: #000; }
+.feed-watched-toggle { margin: 10px 0 12px; }
+.feed-item.watched { border-left: 2px solid var(--paper); }
+.feed-item .wstar { color: var(--paper); margin-right: 2px; }
+
 /* inverted #1 row */
 tbody tr.top1 { background: var(--paper); color: #000; }
 tbody tr.top1:hover { background: var(--paper); }

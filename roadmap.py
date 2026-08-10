@@ -270,8 +270,26 @@ PHASES = [
                        "real page reload, apply (weights update to the exact saved "
                        "values), scope isolation (a view saved on Holmdel does not "
                        "appear on Kepler), delete"},
-            {"name": "Watchlists + alerts", "done": False,
-             "detail": "per-entity subscriptions rather than board-level events"},
+            {"name": "Watchlists + alerts", "done": True,
+             "detail": "star any row (any telescope) to watch it — persisted "
+                       "client-side, same reasoning as saved views: no user "
+                       "account for a server to attach it to, meaningless without "
+                       "the browser that set it. 'Alerts' means surfacing what's "
+                       "already in the merged event feed for starred entities, not "
+                       "a push mechanism — there's no delivery channel to push "
+                       "through when nobody's looking. A WATCHED ONLY filter on "
+                       "the board and a separate one on the feed, watched feed "
+                       "items get a left-border highlight and a star marker. "
+                       "Picked over the two remaining Phase 3 items for the same "
+                       "reason saved views was: zero external dependency, full "
+                       "in-browser verifiability, after a run of iterations on "
+                       "flaky external APIs. Verified end-to-end via direct DOM/JS "
+                       "inspection: toggle a star, confirm persistence across a "
+                       "real page reload, confirm the board's WATCHED ONLY filter "
+                       "shows exactly the starred row, confirm the merged feed "
+                       "correctly flags and filters to the one real event "
+                       "matching a starred entity, confirm scope isolation (a "
+                       "watch on Holmdel doesn't leak into Kepler)"},
             {"name": "Morning brief", "done": False,
              "detail": "one digest across every telescope, pushed on a schedule"},
             {"name": "Channels", "done": False,
