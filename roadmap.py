@@ -721,6 +721,33 @@ PHASES = [
                        "confirming the schedule advances, then with a real "
                        "exception injected into build() confirming the "
                        "schedule does not advance and will retry next tick"},
+            {"name": "Test coverage for app.py's Flask API layer", "done": True,
+             "detail": "app.py's own routes — /api/telescope/<slug>, /api/"
+                       "observatory, the merged feed, the brief endpoints, the "
+                       "toggle endpoint — had zero coverage in either suite "
+                       "despite being the actual surface the frontend and any "
+                       "API consumer talk to. Every prior test exercised "
+                       "telescope logic directly, never through the HTTP layer "
+                       "itself, so a route registration typo, a JSON "
+                       "serialization bug, or a wrong status code could ship "
+                       "unnoticed. Found by checking whether the poller/brief-"
+                       "scheduler fixes had left any adjacent surface in "
+                       "app.py unaudited, the same question that turned up the "
+                       "brief-scheduler bug last iteration. Added 13 tests to "
+                       "test_live.py (kept to two suites rather than adding a "
+                       "third, since Flask's test_client() against the real "
+                       "registered telescopes fits that file's actual scope) "
+                       "using force=False throughout, so every GET reads "
+                       "already-cached data rather than fetching — no new "
+                       "network calls beyond what the rest of the suite "
+                       "already warms. Covers a wellformed payload for all six "
+                       "telescopes' main endpoint, the observatory listing, "
+                       "roadmap, per-telescope and merged event feeds, the "
+                       "brief endpoint, and both 404 paths (unknown telescope, "
+                       "unknown toggle target) without ever writing to the "
+                       "same data/observatory.json the real dev server reads. "
+                       "All 13 passed against real, current data on the first "
+                       "run"},
         ],
     },
 ]

@@ -24,6 +24,13 @@ registry.discover()
 
 ALL = ["hubble", "jackson", "simons", "kepler", "holmdel", "reddington"]
 
+# app.py's own registry.discover() call is idempotent (re-registering a
+# class just overwrites the same dict entry), and every telescope must be
+# enabled for _resolve() to serve it — set directly, not setdefault, so the
+# Flask API tests below don't depend on whatever's already in the shell.
+os.environ["OBSERVATORY_ENABLED"] = "all"
+import app as flask_app                                           # noqa: E402
+
 # Minimum rows a healthy sweep should return. Set low enough to survive a
 # partial source outage but high enough to catch "the API changed shape".
 MIN_ROWS = {"hubble": 100, "jackson": 20, "simons": 10, "kepler": 30,
@@ -159,3 +166,76 @@ def test_historical_rows_is_wellformed_against_real_current_data(scope_rows):
         assert r.get("name"), f"{scope.slug}: backfill row missing name"
     ranked = scope.rank([dict(r) for r in backfill])
     assert ranked[0]["rank"] == 1
+
+
+# ── Flask API layer ──────────────────────────────────────────────────────
+# app.py's own routes had zero test coverage in either suite despite being
+# the actual surface the frontend and any API consumer talk to. These use a
+# real Flask test client against the real registered telescopes -- with
+# force=False (the default for every GET below), view() reads whatever's
+# already cached rather than fetching, so as long as the fixtures above have
+# already warmed the cache this sweep, these add no new network calls.
+@pytest.fixture(scope="module")
+def client():
+    flask_app.app.config["TESTING"] = True
+    return flask_app.app.test_client()
+
+
+def test_api_observatory_lists_every_registered_telescope(client):
+    resp = client.get("/api/observatory")
+    assert resp.status_code == 200
+    slugs = {t["slug"] for t in resp.get_json()["telescopes"]}
+    for slug in ALL:
+        assert slug in slugs
+
+
+def test_api_roadmap_returns_the_real_phases(client):
+    resp = client.get("/api/roadmap")
+    assert resp.status_code == 200
+    assert resp.get_json()["phases"], "roadmap has no phases"
+
+
+@pytest.mark.parametrize("slug", ALL)
+def test_api_telescope_returns_a_wellformed_payload(client, slug):
+    resp = client.get(f"/api/telescope/{slug}")
+    assert resp.status_code == 200, resp.get_json()
+    data = resp.get_json()
+    assert data["telescope"]["slug"] == slug
+    assert isinstance(data["rows"], list) and data["rows"]
+    assert data["count"] == len(data["rows"])
+    assert isinstance(data["panels"], list)
+    assert isinstance(data["weights"], dict)
+
+
+def test_api_telescope_unknown_slug_is_404(client):
+    resp = client.get("/api/telescope/does-not-exist")
+    assert resp.status_code == 404
+
+
+def test_api_telescope_feed_returns_events_shape(client):
+    resp = client.get("/api/telescope/holmdel/whats-new")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert isinstance(data["events"], list)
+    assert "snapshots" in data and "poll_seconds" in data
+
+
+def test_api_observatory_feed_merges_across_enabled_telescopes(client):
+    resp = client.get("/api/observatory/whats-new")
+    assert resp.status_code == 200
+    assert isinstance(resp.get_json()["events"], list)
+
+
+def test_api_brief_returns_a_real_digest(client):
+    resp = client.get("/api/observatory/brief")
+    assert resp.status_code == 200
+    assert "sections" in resp.get_json()
+
+
+def test_api_toggle_unknown_slug_is_404_without_touching_real_state(client):
+    """A KeyError from set_enabled() must be caught before anything is
+    written to the toggle file -- this never reaches disk either way, but
+    confirmed here rather than assumed, since the toggle file is the same
+    data/observatory.json the real dev server reads."""
+    resp = client.post("/api/observatory/does-not-exist/toggle")
+    assert resp.status_code == 404
