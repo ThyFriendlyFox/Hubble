@@ -13,21 +13,25 @@ Sources (all public, no keys):
   Hacker News (Algolia)   story velocity and peak score, windowed by date
   Wikipedia pageviews     general curiosity, 60-day window vs the prior 60
   npm registry            builder adoption, where a topic has a canonical package
+  OpenAlex                paper velocity, 180-day window vs the prior 180
 
 The cross-source **spread** signal is the honest core: an idea moving on one
 surface is a rumour, an idea moving on three is a trend. Topics with only a
 single surface reporting are dampened.
 
 ── A stated limitation ──────────────────────────────────────────────────────
-Holmdel currently has no *research* source, so it cannot see the earliest stage
-of an idea — a paper cited before anyone builds on it. Every free scholarly API
-was unusable from this deployment: arXiv and Semantic Scholar rate-limit the
-shared egress IP, OpenAlex's daily budget is exhausted on it, and Crossref's
-query API is an OR match (a quoted three-word topic returns millions of rows),
-so its counts are not topic counts. Adding a keyed Semantic Scholar or OpenAlex
-client is the top item on Holmdel's roadmap; until then this instrument reads
-attention and adoption, not scholarship, and the `crossing_over` event
-(research → builders) is deliberately not implemented rather than faked.
+OpenAlex works unauthenticated from a normal connection (it was rate-limited
+from the previous sandboxed deployment's shared egress IP, not blocked in
+general) and gives Holmdel its research signal: paper counts matched on the
+same quoted topic phrase used against Hacker News, windowed the same way. It
+counts works, not citations, so a topic can show volume without yet showing
+influence — a citation-weighted signal is a further improvement, not this one.
+Semantic Scholar's unauthenticated quota is a small pool shared globally by
+every caller without a key, so it stays unusable here regardless of network;
+Crossref's query API is an OR match (a quoted three-word topic returns
+millions of rows), so its counts are not topic counts either. Holmdel still
+cannot see GitHub repo or star velocity, and it still tracks a curated
+watchlist rather than discovering topics on its own.
 """
 import datetime as dt
 import time
@@ -42,6 +46,8 @@ from telescope.registry import register
 MIN_STORIES = 12        # below this, HN growth is noise and is not reported
 WINDOW_DAYS = 90        # HN comparison window
 WIKI_DAYS = 60          # Wikipedia comparison window
+RESEARCH_DAYS = 180     # OpenAlex comparison window — papers are sparser than posts
+MIN_PAPERS = 15         # below this combined count, paper growth is noise
 
 
 @dataclass(frozen=True)
@@ -154,13 +160,15 @@ class Holmdel(Telescope):
     glyph = "📡"
     tagline = "IDEA VELOCITY INDEX"
     entity_label = "TOPICS"
-    sources_label = "HACKER NEWS · WIKIPEDIA · NPM"
+    sources_label = "HACKER NEWS · WIKIPEDIA · NPM · OPENALEX"
     caveat = ("Tracks a curated watchlist, so it can only see ideas someone "
               "already put on the list — it does not discover new topics yet. "
-              "It also has no research source (arXiv, Semantic Scholar and "
-              "OpenAlex all rate-limit this deployment; Crossref's API is an "
-              "OR match and its topic counts are invalid), so it reads "
-              "attention and adoption, not scholarship.")
+              "Research velocity is OpenAlex work counts on a quoted phrase "
+              "match, not citations, so it shows volume, not influence; "
+              "Semantic Scholar and arXiv's own APIs remain too rate-limited "
+              "unauthenticated to add as a second scholarly surface, and "
+              "Crossref's OR-match query API can't produce valid topic "
+              "counts. It still cannot see GitHub repo or star velocity.")
 
     cache_ttl = 12 * 3600
     poll_seconds = 24 * 3600
@@ -168,19 +176,21 @@ class Holmdel(Telescope):
     signals = (
         Signal("velocity", "hn_growth", "ATTENTION VELOCITY"),
         Signal("curiosity", "wiki_growth", "CURIOSITY TREND"),
+        Signal("research", "paper_growth", "RESEARCH VELOCITY"),
         Signal("volume", "hn_recent", "STORY VOLUME", log=True),
         Signal("peak", "hn_points", "PEAK STORY", log=True),
         Signal("reach", "wiki_recent", "PUBLIC REACH", log=True),
         Signal("adoption", "npm_downloads", "BUILDER ADOPTION", log=True),
+        Signal("papers", "paper_recent", "PAPER VOLUME", log=True),
         Signal("spread", "spread", "CROSS-SOURCE SPREAD"),
     )
     default_weights = {
-        "velocity": 30, "curiosity": 20, "volume": 10, "peak": 5,
-        "reach": 10, "adoption": 5, "spread": 20,
+        "velocity": 25, "curiosity": 15, "research": 15, "volume": 8,
+        "peak": 4, "reach": 8, "adoption": 5, "papers": 5, "spread": 15,
     }
-    # An idea moving on one surface is a rumour. Topics with no growth reading
-    # on either independent surface get dampened rather than dropped.
-    quality_signals = ("velocity", "curiosity")
+    # An idea moving on one independent surface is a rumour. Topics with no
+    # growth reading on any of these get dampened rather than dropped.
+    quality_signals = ("velocity", "curiosity", "research")
 
     columns = (
         Column("name", "TOPIC", "text"),
@@ -191,6 +201,8 @@ class Holmdel(Telescope):
         Column("hn_points", "PEAK", "int"),
         Column("wiki_growth", "WIKI TREND", "pct"),
         Column("wiki_recent", "WIKI 60D", "int"),
+        Column("paper_growth", "PAPER TREND", "pct"),
+        Column("paper_recent", "PAPERS 180D", "int"),
         Column("npm_downloads", "NPM/MO", "int"),
         Column("spread", "SPREAD", "int"),
     )
@@ -217,14 +229,20 @@ class Holmdel(Telescope):
             headline="🌍 {name} broke into public curiosity — Wikipedia views "
                      "up {pct}%.",
         ),
+        DeltaRule(
+            field="paper_recent", direction="up", frac=0.75, min_abs=MIN_PAPERS,
+            type="research_signal",
+            headline="🔬 {name} research is accelerating — papers up {pct}% "
+                     "({old_fmt} → {new_fmt} in 180 days).",
+        ),
     )
     snapshot_fields = (
         "hn_growth", "hn_recent", "hn_points", "wiki_growth", "wiki_recent",
-        "npm_downloads", "spread", "group",
+        "paper_growth", "paper_recent", "npm_downloads", "spread", "group",
     )
 
     def source_keys(self):
-        return ["hn", "wikipedia", "npm"]
+        return ["hn", "wikipedia", "npm", "openalex"]
 
     # ── sources ──────────────────────────────────────────────────────────
     def _hn(self, ttl):
@@ -290,6 +308,37 @@ class Holmdel(Telescope):
             return out
         return self.cache.cached("wikipedia", ttl, go)
 
+    def _openalex(self, ttl):
+        """Paper count per topic, for two adjacent windows.
+
+        OpenAlex honours quoted phrases the same way Algolia does — unquoted
+        "state space model" matches 6.5M works (anything containing all three
+        words anywhere), quoted it matches ~99K. `per_page=1` is enough
+        because we only read `meta.count`, not the works themselves.
+        """
+        def go():
+            today = dt.date.today()
+            span = dt.timedelta(days=RESEARCH_DAYS)
+            out = {}
+            for t in TOPICS:
+                q = quote_plus(f'"{t.query}"')
+
+                def window(start, end):
+                    data = try_json(
+                        "https://api.openalex.org/works"
+                        f"?search={q}&filter=from_publication_date:{start:%Y-%m-%d},"
+                        f"to_publication_date:{end:%Y-%m-%d}&per_page=1",
+                        default={},
+                    )
+                    return (data.get("meta") or {}).get("count")
+
+                recent = window(today - span, today)
+                prior = window(today - 2 * span, today - span)
+                out[t.key] = {"recent": recent, "prior": prior}
+                time.sleep(0.15)     # generous unauthenticated quota, still be polite
+            return out
+        return self.cache.cached("openalex", ttl, go)
+
     def _npm(self, ttl):
         def go():
             out = {}
@@ -312,21 +361,25 @@ class Holmdel(Telescope):
         hn = self._hn(ttl)
         wiki = self._wiki(ttl)
         npm = self._npm(ttl)
+        openalex = self._openalex(ttl)
 
         rows = []
         for t in TOPICS:
             h = hn.get(t.key) or {}
             w = wiki.get(t.key) or {}
+            p = openalex.get(t.key) or {}
             downloads = npm.get(t.key)
 
             hn_recent, hn_prior = h.get("recent"), h.get("prior")
             wiki_recent, wiki_prior = w.get("recent"), w.get("prior")
+            paper_recent, paper_prior = p.get("recent"), p.get("prior")
 
             # Spread: how many independent surfaces actually report this topic.
             spread = sum([
                 bool(hn_recent),
                 bool(wiki_recent),
                 bool(downloads),
+                bool(paper_recent),
             ])
             rows.append({
                 "key": t.key,
@@ -341,12 +394,16 @@ class Holmdel(Telescope):
                 "wiki_recent": wiki_recent,
                 "wiki_prior": wiki_prior,
                 "wiki_growth": _growth(wiki_recent, wiki_prior, floor=500),
+                "paper_recent": paper_recent,
+                "paper_prior": paper_prior,
+                "paper_growth": _growth(paper_recent, paper_prior, floor=MIN_PAPERS),
                 "npm_downloads": downloads,
                 # Scaled 0-100 so it blends like every other signal.
-                "spread": round(spread / 3 * 100, 1),
+                "spread": round(spread / 4 * 100, 1),
                 "sources": (["hn"] if hn_recent else []) +
                            (["wikipedia"] if wiki_recent else []) +
-                           (["npm"] if downloads else []) or ["hn"],
+                           (["npm"] if downloads else []) +
+                           (["openalex"] if paper_recent else []) or ["hn"],
                 # A topic no surface reports is not evidence of anything.
                 "noise": spread == 0,
             })

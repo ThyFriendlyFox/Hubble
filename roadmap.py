@@ -71,16 +71,29 @@ PHASES = [
                 "design one. Each item below restores a source that exists but "
                 "is unreachable from this deployment.",
         "items": [
-            {"name": "Keyed scholarly source", "done": False,
-             "detail": "Semantic Scholar or OpenAlex API key — restores paper velocity"},
+            {"name": "OpenAlex research velocity", "done": True,
+             "detail": "no key needed — the prior 429s were the sandboxed deployment's "
+                       "shared egress IP, not OpenAlex itself; restores paper_growth "
+                       "and paper_recent to Holmdel on the same quoted-phrase, "
+                       "two-window pattern as its HN signal"},
             {"name": "arXiv via OAI-PMH", "done": False,
-             "detail": "bulk harvest instead of the rate-limited query API"},
+             "detail": "arXiv's query API works fine unauthenticated with normal "
+                       "pacing (~1 req/3s) — bulk OAI-PMH harvest is still worth it "
+                       "as a second scholarly surface, not a fix for a block"},
             {"name": "GitHub repo velocity", "done": False,
-             "detail": "blocked here — session proxy binds GitHub to configured repos"},
+             "detail": "unblocked — GitHub's unauthenticated search API returns 200 "
+                       "locally (60 req/hour ceiling) — add as Holmdel's fourth surface"},
             {"name": "Holmdel crossover event", "done": False,
-             "detail": "'research → builders' — needs a papers source first"},
+             "detail": "'research → builders' — papers source now exists; needs a new "
+                       "declarative rule shape in telescope/events.py that compares a "
+                       "leading signal in the prior snapshot against a lagging one in "
+                       "the current snapshot, not just a same-snapshot delta"},
             {"name": "Topic auto-discovery", "done": False,
              "detail": "graduate from curated watchlist to embedding-cluster resolution"},
+            {"name": "Semantic Scholar key", "done": False,
+             "detail": "still blocked without one — its unauthenticated quota is a "
+                       "small pool shared globally by every unkeyed caller, confirmed "
+                       "not a proxy artifact by retrying locally with backoff"},
         ],
     },
     {
