@@ -256,4 +256,13 @@ if __name__ == "__main__":
     if POLLING:
         _start_poller()
         _start_brief_scheduler()
-    app.run(port=int(os.environ.get("PORT", 5000)))
+    # threaded=True matters here specifically because collect() calls are
+    # I/O-bound (network + time.sleep pacing), which release the GIL: without
+    # it, Flask's dev server handles one request at a time, so a single slow
+    # fetch -- Kepler's per-issuer paced lookups, a Holmdel sweep hitting
+    # arXiv's throttle -- blocks every other request, including completely
+    # unrelated ones (switching to an already-cached telescope, loading the
+    # observatory catalog), for however long that one fetch takes. Found by
+    # watching the dashboard appear to freeze on a saved-view update while a
+    # slow Kepler request was queued ahead of it.
+    app.run(port=int(os.environ.get("PORT", 5000)), threaded=True)

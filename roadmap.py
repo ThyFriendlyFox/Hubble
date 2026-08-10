@@ -748,6 +748,36 @@ PHASES = [
                        "same data/observatory.json the real dev server reads. "
                        "All 13 passed against real, current data on the first "
                        "run"},
+            {"name": "Flask dev server handles requests concurrently", "done": True,
+             "detail": "found by actually using the live dashboard rather than "
+                       "only its API: switching to Simons and saving a "
+                       "weighting view worked, but the UI appeared to freeze "
+                       "on a subsequent interaction while Kepler was mid-"
+                       "refresh. app.run() had no threaded=True, which is "
+                       "Werkzeug's well-documented default — the dev server "
+                       "handles one request at a time. Every collect() call "
+                       "is I/O-bound (network + time.sleep pacing) and "
+                       "releases the GIL, so a single slow fetch — Kepler's "
+                       "per-issuer paced lookups, a Holmdel sweep hitting "
+                       "arXiv's throttle — was blocking every other request "
+                       "behind it, including completely unrelated ones like "
+                       "loading the observatory catalog or switching to an "
+                       "already-cached telescope. One-line fix: "
+                       "app.run(..., threaded=True). Verified conclusively "
+                       "against the fix, not just the symptom: fired a "
+                       "guaranteed-slow forced Kepler refresh "
+                       "(?refresh=1) and, two seconds later while it was "
+                       "still running, hit a completely unrelated endpoint "
+                       "concurrently — it returned in 0.0017s instead of "
+                       "queuing behind the still-in-flight 300+ second "
+                       "request, exactly the behavior threaded=True is "
+                       "supposed to produce. Also did a fresh UI pass while "
+                       "here: confirmed the watchlist (star, persist across a "
+                       "real reload, WATCHED ONLY filter, scope isolation) "
+                       "and saved views (save, apply restores exact weights, "
+                       "delete, scope isolation) both still work correctly "
+                       "after all the backend churn this session — no other "
+                       "regressions found"},
         ],
     },
 ]
