@@ -179,3 +179,44 @@ class ThresholdRule:
             return [_event(self.type, curr, ts,
                            _fmt(self.headline_below, curr, extra), extra)]
         return []
+
+
+@dataclass
+class CrossoverRule:
+    """Fires when a leading signal, elevated *last* sweep, is followed by a
+    lagging signal elevated *this* sweep — Holmdel's "research becomes
+    builders" shape, generalised. Every other rule compares one field across
+    two points in time on the same row; this one compares two *different*
+    fields across two different points in time, which is why it can't be
+    built out of DeltaRule/ThresholdRule.
+
+    Deliberately simple: it does not require the leading signal to have since
+    cooled, because a two-point snapshot diff can't reliably tell "declining"
+    from "still high" without a third point. "Leading was elevated, lagging
+    is elevated now" is an honest, checkable claim; "and receding" is not,
+    with only two samples.
+    """
+    leading_field: str = ""
+    leading_min: float = 0.0     # leading_field in the PREVIOUS row must clear this
+    lagging_field: str = ""
+    lagging_min: float = 0.0     # lagging_field in the CURRENT row must clear this
+    type: str = "crossing_over"
+    headline: str = "{name} crossed over from {leading_field} to {lagging_field}."
+
+    def board(self, prev_rows, curr_rows, ts):
+        return []
+
+    def row(self, prev, curr, ts):
+        if prev is None:
+            return []
+        lead = prev.get(self.leading_field)
+        lag = curr.get(self.lagging_field)
+        if lead is None or lag is None:
+            return []
+        if lead < self.leading_min or lag < self.lagging_min:
+            return []
+        extra = {
+            "leading_value": round(lead, 1),
+            "lagging_value": round(lag, 1),
+        }
+        return [_event(self.type, curr, ts, _fmt(self.headline, curr, extra), extra)]

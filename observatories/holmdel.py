@@ -47,7 +47,7 @@ from dataclasses import dataclass
 from urllib.parse import quote, quote_plus
 
 from telescope import Column, Signal, Telescope
-from telescope.events import ClimberRule, DeltaRule, NewLeaderRule
+from telescope.events import ClimberRule, CrossoverRule, DeltaRule, NewLeaderRule
 from telescope.http import get_json, try_json
 from telescope.registry import register
 
@@ -260,6 +260,17 @@ class Holmdel(Telescope):
             type="repo_signal",
             headline="🛠 {name} is drawing builders — new repos up {pct}% "
                      "({old_fmt} → {new_fmt} in 180 days).",
+        ),
+        # The transition TELESCOPES.md calls out as the highest-value one:
+        # a topic with real paper growth last sweep, followed by real repo
+        # growth this sweep — research becoming builders, not simultaneously
+        # loud on both (that's just a broadly hot topic, not a crossover).
+        CrossoverRule(
+            leading_field="paper_growth", leading_min=40,
+            lagging_field="repo_growth", lagging_min=75,
+            headline="🔀 {name} crossed over — research led (papers "
+                     "+{leading_value}% last sweep), builders are now "
+                     "following (repos +{lagging_value}% this sweep).",
         ),
     )
     snapshot_fields = (

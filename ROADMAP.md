@@ -33,14 +33,14 @@ _Generated from `roadmap.py`, which also backs the dashboard's ROADMAP tab._
 - [x] **Shared series kernel** — telescope/series.py — Simons and Reddington share adapters and analytics
 - [x] **Small-denominator gate** — Holmdel reports no growth below 12 stories rather than a loud +500%
 
-## PHASE 2B · UNBLOCKING HOLMDEL  ·  `next`  (2/6)
+## PHASE 2B · UNBLOCKING HOLMDEL  ·  `next`  (3/6)
 
 > Holmdel's research blindness is an access problem, not a design one. Each item below restores a source that exists but is unreachable from this deployment.
 
 - [x] **OpenAlex research velocity** — no key needed — the prior 429s were the sandboxed deployment's shared egress IP, not OpenAlex itself; restores paper_growth and paper_recent to Holmdel on the same quoted-phrase, two-window pattern as its HN signal
 - [ ] **arXiv via OAI-PMH** — arXiv's query API works fine unauthenticated with normal pacing (~1 req/3s) — bulk OAI-PMH harvest is still worth it as a second scholarly surface, not a fix for a block
 - [x] **GitHub repo velocity** — new-repo creation velocity + peak stars, 180-day window vs prior, on the same quoted-phrase pattern as HN/OpenAlex. The real limit turned out stricter than first read: GitHub's *search* endpoint caps at 10 req/min unauthenticated, not the ~60/hour of its other APIs — a full 32-topic sweep now takes several minutes, paced accordingly. Matches repo name and description only, not READMEs
-- [ ] **Holmdel crossover event** — 'research → builders' — papers source now exists; needs a new declarative rule shape in telescope/events.py that compares a leading signal in the prior snapshot against a lagging one in the current snapshot, not just a same-snapshot delta
+- [x] **Holmdel crossover event** — new kernel rule shape, CrossoverRule in telescope/events.py — generic, not Holmdel-specific: fires when a leading field was elevated in the PREVIOUS snapshot and a different, lagging field is elevated in the CURRENT one. Wired to paper_growth (leading) -> repo_growth (lagging) for 'research becomes builders'. Deliberately doesn't require the leading signal to have cooled — a two-point diff can't honestly tell 'declining' from 'still high'. Couldn't observe a real live firing this iteration (paper_growth is still None while OpenAlex's quota is exhausted), so verified end-to-end against a real Holmdel row with realistic values patched in for the still-down signal
 - [ ] **Topic auto-discovery** — graduate from curated watchlist to embedding-cluster resolution
 - [ ] **Semantic Scholar key** — still blocked without one — its unauthenticated quota is a small pool shared globally by every unkeyed caller, confirmed not a proxy artifact by retrying locally with backoff
 

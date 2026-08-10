@@ -14,7 +14,7 @@ import tempfile                                                   # noqa: E402
 
 from telescope import ranking                                    # noqa: E402
 from telescope.cache import Cache                                # noqa: E402
-from telescope.events import (ClimberRule, DeltaRule,            # noqa: E402
+from telescope.events import (ClimberRule, CrossoverRule, DeltaRule,  # noqa: E402
                               NewEntrantRule, NewLeaderRule, ThresholdRule)
 from telescope.ranking import Signal                             # noqa: E402
 
@@ -215,6 +215,29 @@ def test_cache_writes_empty_result_when_nothing_cached_yet():
         assert cache.cached("k", 3600, lambda: {}, is_empty=lambda r: not r) == {}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_crossover_rule_reads_leading_from_prev_and_lagging_from_curr():
+    """Holmdel's 'research -> builders' shape: unlike every other rule, the
+    two fields it compares live at two different points in time."""
+    rule = CrossoverRule(
+        leading_field="paper_growth", leading_min=40,
+        lagging_field="repo_growth", lagging_min=75,
+    )
+    prev = {"paper_growth": 60}
+    curr = {"name": "n", "repo_growth": 90}
+    assert rule.row(prev, curr, 0)
+    # A *current* paper_growth spike doesn't count -- it must come from prev.
+    assert rule.row({"paper_growth": 0}, {**curr, "paper_growth": 90}, 0) == []
+    # Leading was too weak.
+    assert rule.row({"paper_growth": 10}, curr, 0) == []
+    # Lagging didn't clear its own bar.
+    assert rule.row(prev, {**curr, "repo_growth": 10}, 0) == []
+    # No prior snapshot at all -- nothing to lead from.
+    assert rule.row(None, curr, 0) == []
+    # Either field simply absent (signal never populated) -- no false fire.
+    assert rule.row({}, curr, 0) == []
+    assert rule.row(prev, {"name": "n"}, 0) == []
 
 
 def test_bad_headline_template_does_not_raise():
