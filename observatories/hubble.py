@@ -8,13 +8,25 @@ Sources (all public, no keys):
   OpenRouter        real-world weekly usage rank, pricing, context, the HF join key
   Artificial Analysis (embedded in OpenRouter)  intelligence / coding / agentic
   Design Arena      (embedded in OpenRouter)    elo
-  LMArena           best-effort community mirror
+
+A stated limitation: arena_elo used to have a second, independent source —
+LMArena's own leaderboard CSV, checked out of the lm-sys/FastChat repo on
+GitHub — as a fallback for models OpenRouter's own Design Arena data doesn't
+cover. That fetch was found permanently broken (a real 404, the file no longer
+exists at that path) while auditing the fleet's fetchers for stale sources;
+LMArena has since moved to its own dedicated site (a JS app behind bot
+protection, not a fetchable data file) and the community-maintained CSV
+mirror on Hugging Face Spaces is roughly a year stale, which would silently
+present outdated rankings as current — worse than having no fallback at all.
+Removed rather than left silently dead: arena_elo now comes from OpenRouter's
+own Design Arena data only, so a model missing there simply has no arena
+score, which renormalises away instead of showing a wrong one.
 """
 import re
 
 from telescope import Column, Signal, Telescope
 from telescope.events import ClimberRule, DeltaRule, NewEntrantRule, NewLeaderRule
-from telescope.http import get_text, try_json
+from telescope.http import try_json
 from telescope.registry import register
 
 
@@ -31,10 +43,6 @@ def _clean_price(v):
     pricing. Treat those as unknown so they don't skew price normalisation."""
     f = _to_float(v)
     return None if f is None or f < 0 else f
-
-
-def _norm(s):
-    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
 
 # Non-"best LLM" entries: quant repacks, embeddings, rerankers, OCR/TTS/image
@@ -83,7 +91,12 @@ class Hubble(Telescope):
     entity_label = "MODELS"
     sources_label = "HUGGINGFACE · OPENROUTER · BENCHMARKS · ARENA"
     caveat = ("Usage rank is OpenRouter traffic only — it under-counts models "
-              "served direct from a lab's own API.")
+              "served direct from a lab's own API. Arena Elo comes from "
+              "OpenRouter's own Design Arena data only — the independent "
+              "LMArena fallback this used to have was removed after its "
+              "source went permanently dead, so a model with no Design "
+              "Arena entry simply has no arena score rather than a stale "
+              "or wrong one.")
 
     signals = (
         Signal("intelligence", "intelligence_index", "INTELLIGENCE"),
@@ -139,7 +152,7 @@ class Hubble(Telescope):
     )
 
     def source_keys(self):
-        return ["hf", "openrouter", "lmarena"]
+        return ["hf", "openrouter"]
 
     # ── sources ──────────────────────────────────────────────────────────
     def fetch_huggingface(self, ttl, limit=300):
@@ -191,32 +204,11 @@ class Hubble(Telescope):
         # either, same reasoning as fetch_huggingface().
         return self.cache.cached("openrouter", ttl, go, is_empty=lambda r: not r)
 
-    def fetch_lmarena(self, ttl):
-        """Lowered model name -> arena elo. Best effort; may be empty."""
-        def go():
-            result = {}
-            try:
-                text = get_text(
-                    "https://raw.githubusercontent.com/lm-sys/FastChat/main/"
-                    "fastchat/serve/monitor/leaderboard.csv"
-                )
-            except Exception:
-                return result
-            for line in text.splitlines()[1:]:
-                parts = [p.strip() for p in line.split(",")]
-                if len(parts) >= 2:
-                    name, elo = parts[0], _to_float(parts[1])
-                    if name and elo:
-                        result[_norm(name)] = elo
-            return result
-        return self.cache.cached("lmarena", ttl, go)
-
     # ── join ─────────────────────────────────────────────────────────────
     def collect(self, force=False):
         ttl = self.ttl(force)
         hf = self.fetch_huggingface(ttl)
         orr = self.fetch_openrouter(ttl)
-        arena = self.fetch_lmarena(ttl)
 
         hf_by_id = {m["hf_id"]: m for m in hf if m.get("hf_id")}
         rows = {}
@@ -241,7 +233,7 @@ class Hubble(Telescope):
                 "intelligence_index": m.get("intelligence_index"),
                 "coding_index": m.get("coding_index"),
                 "agentic_index": m.get("agentic_index"),
-                "arena_elo": m.get("arena_elo") or arena.get(_norm(m.get("name"))),
+                "arena_elo": m.get("arena_elo"),
                 "sources": ["openrouter"] + (["huggingface"] if h else []),
                 "noise": _is_noise(m.get("name"), m.get("hf_id")),
                 "params_b": _parse_params(m.get("name"), m.get("hf_id")),
@@ -268,7 +260,9 @@ class Hubble(Telescope):
                 "intelligence_index": None,
                 "coding_index": None,
                 "agentic_index": None,
-                "arena_elo": arena.get(_norm(key.split("/")[-1])),
+                # HF-only models never appeared in OpenRouter's own response,
+                # so there's no Design Arena data to attach here either.
+                "arena_elo": None,
                 "sources": ["huggingface"],
                 "noise": _is_noise(key, key),
                 "params_b": _parse_params(key, key),

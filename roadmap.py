@@ -1022,6 +1022,43 @@ PHASES = [
                        "it 8 more times with 3s spacing: 429 every single "
                        "time, the same isolated-fluke pattern as before, not "
                        "a real unblocking"},
+            {"name": "Removed Hubble's permanently-dead LMArena fallback",
+             "done": True,
+             "detail": "found while re-examining Hubble's fetch_lmarena() "
+                       "with the same rigor recently applied to Kepler's "
+                       "sources — its is_empty status had been left as "
+                       "'best effort; may be empty' without ever actually "
+                       "re-verifying that reasoning against a real current "
+                       "fetch. It doesn't hold: the real fetch returns a "
+                       "genuine 404 — the leaderboard.csv file no longer "
+                       "exists at that path in lm-sys/FastChat at all, "
+                       "confirmed by listing the repo's monitor/ directory "
+                       "directly, not just the one guessed URL. This fetcher "
+                       "has been silently contributing zero real signal for "
+                       "the entire session (and likely far longer), with no "
+                       "error ever surfaced, because it's a supplementary "
+                       "fallback: arena_elo tries OpenRouter's own embedded "
+                       "Design Arena data first, and the dead LMArena source "
+                       "was only ever meant to fill gaps for models missing "
+                       "there. Investigated whether a live replacement "
+                       "exists before deciding what to do: LMArena has since "
+                       "become its own product at a dedicated domain, whose "
+                       "frontend is a JS app with its guessed /api/ path "
+                       "blocked (403, not something to try bypassing); the "
+                       "closest thing to a structured data file is a "
+                       "community-maintained mirror on Hugging Face Spaces, "
+                       "but its most recent file is roughly a year stale — "
+                       "silently serving that as 'live' arena data would be "
+                       "worse than having none, presenting outdated rankings "
+                       "as current. Removed the dead fetcher entirely rather "
+                       "than leave it silently doing nothing: arena_elo now "
+                       "comes from OpenRouter's own data only, and the "
+                       "caveat states this plainly. Verified against real, "
+                       "current data: today's live fetch still populates "
+                       "arena_elo for 144/650 real models from OpenRouter's "
+                       "own Design Arena data, unchanged from before removal "
+                       "since the dead fallback was already contributing "
+                       "nothing"},
         ],
     },
 ]
