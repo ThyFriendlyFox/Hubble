@@ -300,7 +300,15 @@ class Jackson(Telescope):
                 default=[],
             )
             return data if isinstance(data, list) else []
-        return self.cache.cached("sbir", ttl, go)
+        # Missing this guard meant a single 429/403 sweep (the common case —
+        # SBIR's public API has rate-limited nearly every request all
+        # session) silently overwrote any earlier real cache hit with an
+        # empty list for the rest of the TTL, the same cache-poisoning shape
+        # already fixed on _psc/_psc_prior just above and across the rest of
+        # the fleet. An empty read here is never the normal outcome of a
+        # healthy request the way it legitimately is for some other
+        # fetchers, so the plain not-r check (not a canary probe) is right.
+        return self.cache.cached("sbir", ttl, go, is_empty=lambda r: not r)
 
     # ── join ─────────────────────────────────────────────────────────────
     def collect(self, force=False):

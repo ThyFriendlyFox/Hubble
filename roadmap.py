@@ -1198,6 +1198,30 @@ PHASES = [
                        "and this one too the moment OpenAlex's budget is "
                        "ever non-zero, still hard-fails on a real "
                        "regression exactly as before"},
+            {"name": "Jackson's SBIR fetch closes the last cache-poisoning "
+                     "gap in the fleet", "done": True,
+             "detail": "audited the fleet for the exact failure class "
+                       "already fixed everywhere else per HANDOFF.md's own "
+                       "suggested next-step pattern, and found one real "
+                       "miss: _sbir() had no `is_empty` guard on its "
+                       "cache.cached() call, unlike _psc/_psc_prior two "
+                       "functions above it in the same file and every other "
+                       "fetcher in the fleet. SBIR's public API has "
+                       "confirmed rate-limited essentially every request "
+                       "all session ('worse than rate-limits hard' per "
+                       "HANDOFF) — re-verified live immediately before "
+                       "fixing, still 429 'TooManyRequestsError: The SBIR "
+                       "Public API is not available at this time.' Without "
+                       "the guard, every single sweep's near-certain 429 "
+                       "silently overwrote any earlier lucky real cache hit "
+                       "with an empty list for the rest of the TTL — the "
+                       "same cache-poisoning shape Kepler/Holmdel/npm were "
+                       "already fixed for. Added `is_empty=lambda r: not "
+                       "r`, the plain-not-canary form, since an empty SBIR "
+                       "read is never the normal shape of a healthy request "
+                       "(unlike Kepler's domains/hiring, where empty is the "
+                       "frequent legitimate outcome and a canary probe was "
+                       "needed instead). Both suites verified green after"},
         ],
     },
 ]
