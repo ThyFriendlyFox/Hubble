@@ -85,3 +85,36 @@ def dispatch(events, scope):
         if e.get("type") in SOCIAL_TYPES:
             for channel in CHANNELS:
                 channel(e, scope)
+
+
+def post_text_to_discord(text):
+    """Same webhook as post_to_discord, a raw digest instead of one event."""
+    url = os.environ.get("OBSERVATORY_DISCORD_WEBHOOK")
+    if not url:
+        return False
+    try:
+        requests.post(url, json={"content": text[:2000]}, timeout=15)
+        return True
+    except requests.RequestException:
+        return False
+
+
+def post_text_to_slack(text):
+    url = os.environ.get("OBSERVATORY_SLACK_WEBHOOK")
+    if not url:
+        return False
+    try:
+        requests.post(url, json={"text": text}, timeout=15)
+        return True
+    except requests.RequestException:
+        return False
+
+
+def dispatch_brief(text):
+    """Push a composed digest (telescope/brief.py) through the same channels
+    regular events use. Unconfigured is the honest default: this always
+    logs, and only reaches Discord/Slack if their webhook env vars are set
+    — the same condition every other channel here already depends on."""
+    _log(f"[observatory:brief]\n{text}")
+    post_text_to_discord(text)
+    post_text_to_slack(text)

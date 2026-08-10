@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import shutil                                                     # noqa: E402
 import tempfile                                                   # noqa: E402
 
-from telescope import ranking                                    # noqa: E402
+from telescope import brief, ranking                             # noqa: E402
 from telescope.base import Telescope                             # noqa: E402
 from telescope.cache import Cache                                # noqa: E402
 from telescope.events import (ClimberRule, CrossoverRule, DeltaRule,  # noqa: E402
@@ -374,3 +374,32 @@ def test_none_field_renders_as_a_dash_not_the_word_none():
     events = rule.row({"rank": 5, "score": 1}, {"name": "n", "rank": 1, "score": 1,
                                                  "hn_growth": None}, 0)
     assert events[0]["headline"] == "n moved (HN —%)."
+
+
+# ── morning brief ──────────────────────────────────────────────────────────
+def test_brief_render_text_pure_formatting():
+    """render_text() is what actually gets pushed to Discord/Slack, so its
+    exact shape is worth pinning even though build() itself (which touches
+    the registry and each telescope's real collect()) is verified live."""
+    digest = {
+        "generated_at": 0, "since": 0,
+        "sections": [
+            {"slug": "x", "name": "X", "glyph": "🔭", "tagline": "T",
+             "entity_label": "E", "leader": {"name": "Widget", "score": 88.5},
+             "event_count": 2,
+             "top_events": [{"headline": "A thing happened.", "type": "t"}]},
+            {"slug": "y", "name": "Y", "glyph": "💰", "tagline": "T2",
+             "entity_label": "E2", "leader": None, "event_count": 0,
+             "top_events": []},
+        ],
+    }
+    text = brief.render_text(digest)
+    assert "Widget (88.5)" in text
+    assert "A thing happened." in text
+    assert "no leader yet" in text
+    assert "0 new event(s)" in text
+
+
+def test_brief_render_text_handles_no_enabled_telescopes():
+    text = brief.render_text({"generated_at": 0, "since": 0, "sections": []})
+    assert "No telescopes enabled" in text

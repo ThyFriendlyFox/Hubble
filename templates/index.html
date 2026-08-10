@@ -33,6 +33,7 @@
         <nav class="tabs" id="tabs">
           <button class="tab active" data-view="board">BOARD</button>
           <button class="tab" data-view="feed">WHAT'S NEW</button>
+          <button class="tab" data-view="brief">BRIEF</button>
           <button class="tab" data-view="scopes">TELESCOPES</button>
           <button class="tab" data-view="roadmap">ROADMAP</button>
         </nav>
@@ -97,6 +98,19 @@
         <div class="section-label"><span>01</span> DETECTED EVENTS · ALL ENABLED TELESCOPES</div>
         <label class="chk feed-watched-toggle"><input type="checkbox" id="feed-watched-only" /> ★ WATCHED ONLY</label>
         <div id="feed" class="feed"></div>
+      </section>
+    </div>
+
+    <!-- ════════════ BRIEF ════════════ -->
+    <div class="view" id="view-brief" hidden>
+      <section>
+        <div class="section-label"><span>01</span> MORNING BRIEF · ONE DIGEST ACROSS EVERY ENABLED TELESCOPE</div>
+        <div class="control-row">
+          <div class="status" id="brief-meta"></div>
+          <div class="spacer"></div>
+          <button id="send-brief" class="btn ghost">SEND NOW</button>
+        </div>
+        <div id="brief" class="brief"></div>
       </section>
     </div>
 

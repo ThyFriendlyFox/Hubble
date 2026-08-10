@@ -19,12 +19,14 @@ import traceback
 from flask import Flask, jsonify, render_template, request
 
 import roadmap as roadmap_data
+from telescope import brief as brief_data
 from telescope import notifier, registry
 
 app = Flask(__name__)
 registry.discover()
 
 POLLING = os.environ.get("OBSERVATORY_POLL", "1") != "0"
+BRIEF_HOURS = float(os.environ.get("OBSERVATORY_BRIEF_HOURS", 24))
 
 
 # ── pages ────────────────────────────────────────────────────────────────
@@ -80,6 +82,26 @@ def api_observatory_feed():
             events.append(e)
     events.sort(key=lambda e: e.get("ts", 0), reverse=True)
     return jsonify({"events": events[:limit]})
+
+
+@app.route("/api/observatory/brief")
+def api_brief():
+    """The morning brief, composed fresh from already-cached data — never
+    forces a sweep, so this is always cheap to call."""
+    hours = request.args.get("hours", default=BRIEF_HOURS, type=float)
+    return jsonify(brief_data.build(hours=hours))
+
+
+@app.route("/api/observatory/brief/send", methods=["POST"])
+def api_brief_send():
+    """Manually push the brief through the same channels the schedule uses
+    — for verifying delivery without waiting for the schedule to fire.
+    Always logs; only reaches Discord/Slack if their webhook env vars are
+    configured, same as every other channel."""
+    digest = brief_data.build(hours=BRIEF_HOURS)
+    text = brief_data.render_text(digest)
+    notifier.dispatch_brief(text)
+    return jsonify({"sent": True, "text": text})
 
 
 # ── per-telescope API ────────────────────────────────────────────────────
@@ -187,8 +209,30 @@ def _start_poller():
     threading.Thread(target=_poller, daemon=True).start()
 
 
+def _brief_scheduler():
+    """Composes and dispatches the morning brief on its own cadence,
+    independent of any single telescope's poll interval."""
+    last = 0
+    while True:
+        if time.time() >= last + BRIEF_HOURS * 3600:
+            try:
+                digest = brief_data.build(hours=BRIEF_HOURS)
+                notifier.dispatch_brief(brief_data.render_text(digest))
+            except Exception:
+                traceback.print_exc()
+            last = time.time()
+        time.sleep(60)
+
+
+def _start_brief_scheduler():
+    if app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+        return
+    threading.Thread(target=_brief_scheduler, daemon=True).start()
+
+
 if __name__ == "__main__":
     app.debug = os.environ.get("OBSERVATORY_DEBUG", "1") != "0"
     if POLLING:
         _start_poller()
+        _start_brief_scheduler()
     app.run(port=int(os.environ.get("PORT", 5000)))

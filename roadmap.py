@@ -290,8 +290,27 @@ PHASES = [
                        "correctly flags and filters to the one real event "
                        "matching a starred entity, confirm scope isolation (a "
                        "watch on Holmdel doesn't leak into Kepler)"},
-            {"name": "Morning brief", "done": False,
-             "detail": "one digest across every telescope, pushed on a schedule"},
+            {"name": "Morning brief", "done": True,
+             "detail": "new telescope/brief.py composes one digest across every "
+                       "enabled telescope (current leader + recent events), reading "
+                       "already-cached boards and already-recorded events only — "
+                       "never forces a sweep, so it's always cheap regardless of "
+                       "how expensive any one telescope's own collect() is. A new "
+                       "background scheduler (OBSERVATORY_BRIEF_HOURS, default 24) "
+                       "dispatches it through the same Discord/Slack channels "
+                       "regular events already use (both genuinely wired — real "
+                       "webhook POSTs gated on env vars, not stubs — confirmed by "
+                       "reading notifier.py before building on it). No real webhook "
+                       "is configured in this environment, so verified two ways "
+                       "instead of live delivery: a new BRIEF tab renders the same "
+                       "digest in-browser with a SEND NOW button hitting the same "
+                       "dispatch path the schedule uses, and calling dispatch_brief() "
+                       "directly (bypassing Flask's stdout buffering, which delayed "
+                       "the print in the dev server's own log tail) confirmed the "
+                       "exact digest text logs correctly. Verified against real, "
+                       "current data across all six telescopes at once — including "
+                       "Hubble's actual current #1 model and Holmdel's 39 real "
+                       "accumulated events, not synthetic data"},
             {"name": "Channels", "done": False,
              "detail": "Discord and Slack are wired; X needs credentials"},
             {"name": "Signal-quality feedback", "done": False,

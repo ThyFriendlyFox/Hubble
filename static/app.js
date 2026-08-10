@@ -663,12 +663,60 @@ async function loadRoadmap() {
 }
 
 /* ── views ──────────────────────────────────── */
+/* ── morning brief ──────────────────────────── */
+async function loadBrief() {
+  const el = $("#brief");
+  el.innerHTML = `<div class="feed-empty">LOADING BRIEF…</div>`;
+  try {
+    const r = await fetch("/api/observatory/brief");
+    const data = await r.json();
+    $("#brief-meta").textContent =
+      `GENERATED ${ago(Date.now() / 1000 - data.generated_at)} AGO · ` +
+      `COVERING THE LAST ${ago(Date.now() / 1000 - data.since)}`;
+    if (!data.sections || !data.sections.length) {
+      el.innerHTML = `<div class="feed-empty">No telescopes enabled.</div>`;
+      return;
+    }
+    el.innerHTML = data.sections
+      .map((s) => {
+        const lead = s.leader
+          ? `<b>${s.leader.name}</b> <span class="brief-score">${s.leader.score}</span>`
+          : `<span class="dim">no leader yet</span>`;
+        const events =
+          s.top_events.map((e) => `<li>${e.headline}</li>`).join("") ||
+          `<li class="dim">nothing new</li>`;
+        return `<div class="brief-section">
+          <div class="brief-head">
+            <span class="brief-glyph">${s.glyph}</span>
+            <span class="brief-name">${s.name}</span>
+            <span class="brief-count">${s.event_count} NEW</span>
+          </div>
+          <div class="brief-lead">${lead}</div>
+          <ul class="brief-events">${events}</ul>
+        </div>`;
+      })
+      .join("");
+  } catch (e) {
+    el.innerHTML = `<div class="feed-empty">⚠ ${e}</div>`;
+  }
+}
+$("#send-brief").addEventListener("click", async () => {
+  $("#send-brief").disabled = true;
+  try {
+    await fetch("/api/observatory/brief/send", { method: "POST" });
+    await loadBrief();
+  } finally {
+    $("#send-brief").disabled = false;
+  }
+});
+
 function switchView(view) {
   document.querySelectorAll(".tab").forEach((t) =>
     t.classList.toggle("active", t.dataset.view === view)
   );
   document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== "view-" + view));
   if (view === "feed") loadFeed();
+  if (view === "brief") loadBrief();
   if (view === "roadmap") loadRoadmap();
 }
 $("#tabs").addEventListener("click", (e) => {
