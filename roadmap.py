@@ -114,11 +114,12 @@ PHASES = [
                        "board can only see companies that already hold a DoD contract; "
                        "a new panel reads Kepler's already-cached Form D feed (never "
                        "forces it to refresh) and keeps filings whose name or industry "
-                       "reads defense/dual-use, so a stealth raise with no contract "
-                       "history shows up before it's a prime. Keyword heuristic, not a "
-                       "verified classification, and only appears while Kepler is on. "
-                       "Needed a kernel change: telescope.panels() so a telescope can "
-                       "return more than one secondary board (Jackson now has two)"},
+                       "reads defense/dual-use. Keyword-on-name only, so it misses "
+                       "deliberately-named stealth companies (Anduril doesn't say "
+                       "'defense' anywhere) and is often empty — obvious-by-name "
+                       "defense filers are rare in any 12-day window. Needed a kernel "
+                       "change: telescope.panels() so a telescope can return more than "
+                       "one secondary board (Jackson now has two)"},
             {"name": "Simons 13F whale tracking", "done": False,
              "detail": "EDGAR 13F position deltas; 45-day lag stated on the row"},
             {"name": "Backfill history", "done": False,

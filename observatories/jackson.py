@@ -149,8 +149,13 @@ class Jackson(Telescope):
               "The board itself can only see companies that already hold a DoD "
               "contract, which by definition excludes anything not yet on the "
               "map; the UNMAPPED panel below cross-references Kepler's Form D "
-              "feed by keyword, which is a heuristic, not a verified defense "
-              "classification, and only appears while Kepler is enabled.")
+              "feed by keyword on the company name and SEC industry code, "
+              "which has no defense category at all. It will miss most "
+              "deliberately-named stealth defense startups — Anduril doesn't "
+              "say 'defense' anywhere — and only catches the ones that do. "
+              "It only appears while Kepler is enabled, and often shows "
+              "nothing at all: obvious-by-name defense filers are rare in "
+              "any given 12-day window, which is expected, not a bug.")
 
     # Defense money moves on quarterly rhythms; no need to sweep hourly.
     cache_ttl = 12 * 3600
