@@ -233,8 +233,23 @@ PHASES = [
         "items": [
             {"name": "Cross-telescope joins", "done": False,
              "detail": "Jackson SBIR award → Kepler candidate; Holmdel crossover → Kepler sector"},
-            {"name": "Saved views / theses", "done": False,
-             "detail": "name a slider configuration and return to it"},
+            {"name": "Saved views / theses", "done": True,
+             "detail": "name the current weighting, click it later to reapply — "
+                       "persisted client-side (localStorage), scoped per telescope, "
+                       "not round-tripped through the server: a slider config is "
+                       "meaningless without the browser that set it. Deliberately "
+                       "picked as the next item over the two remaining Phase 3 "
+                       "options (Jackson tech-area board needs a bigger multi-board "
+                       "ranking architecture; Jackson solicitations is blocked on a "
+                       "SAM.gov key) after a run of iterations spent on flaky "
+                       "external APIs (OpenAlex still down, arXiv throttling, "
+                       "GitHub's strict limit, SAM.gov and Semantic Scholar both "
+                       "key-gated) — a purely internal feature with zero external "
+                       "dependency and full in-browser verifiability. Verified via "
+                       "direct DOM/JS inspection end-to-end: save, persist across a "
+                       "real page reload, apply (weights update to the exact saved "
+                       "values), scope isolation (a view saved on Holmdel does not "
+                       "appear on Kepler), delete"},
             {"name": "Watchlists + alerts", "done": False,
              "detail": "per-entity subscriptions rather than board-level events"},
             {"name": "Morning brief", "done": False,

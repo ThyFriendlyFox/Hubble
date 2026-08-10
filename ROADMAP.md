@@ -57,12 +57,12 @@ _Generated from `roadmap.py`, which also backs the dashboard's ROADMAP tab._
 - [x] **Backfill history** — new Telescope.historical_rows() hook: reconstructs a real one-period-ago baseline from data a telescope already fetched for its own growth math (a prior-window value, never fabricated), so the very first sweep can diff against something instead of announcing nothing until a second live sweep — a full day away at a 24h poll cadence. Wired into Holmdel and Jackson, which already carry the needed prior fields; Kepler's Form D filings are discrete point-in-time events with nothing to reconstruct, so it correctly gets none — the honest default, not a gap to fill. Verified against real cached data, not synthetic: simulating Holmdel's and Jackson's first-ever sweep produced 28 and 41 real events respectively (AI Agents repos +248%, Dynetics obligations +127%, both matching numbers already visible on the live boards). That verification also surfaced a real, unrelated bug — a None field rendered as the literal text 'None' in a headline — fixed in telescope/events.py
 - [x] **Per-signal explanations** — hover a score to see raw value, normalised value, weight and point contribution per signal, plus why a row was dampened if it was — generic across all six telescopes
 
-## PHASE 4 · THE OBSERVATORY LAYER  ·  `later`  (0/6)
+## PHASE 4 · THE OBSERVATORY LAYER  ·  `later`  (1/6)
 
 > Where a fleet beats a collection: cross-telescope joins.
 
 - [ ] **Cross-telescope joins** — Jackson SBIR award → Kepler candidate; Holmdel crossover → Kepler sector
-- [ ] **Saved views / theses** — name a slider configuration and return to it
+- [x] **Saved views / theses** — name the current weighting, click it later to reapply — persisted client-side (localStorage), scoped per telescope, not round-tripped through the server: a slider config is meaningless without the browser that set it. Deliberately picked as the next item over the two remaining Phase 3 options (Jackson tech-area board needs a bigger multi-board ranking architecture; Jackson solicitations is blocked on a SAM.gov key) after a run of iterations spent on flaky external APIs (OpenAlex still down, arXiv throttling, GitHub's strict limit, SAM.gov and Semantic Scholar both key-gated) — a purely internal feature with zero external dependency and full in-browser verifiability. Verified via direct DOM/JS inspection end-to-end: save, persist across a real page reload, apply (weights update to the exact saved values), scope isolation (a view saved on Holmdel does not appear on Kepler), delete
 - [ ] **Watchlists + alerts** — per-entity subscriptions rather than board-level events
 - [ ] **Morning brief** — one digest across every telescope, pushed on a schedule
 - [ ] **Channels** — Discord and Slack are wired; X needs credentials

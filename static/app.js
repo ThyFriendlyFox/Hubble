@@ -272,6 +272,7 @@ async function load(refresh = false) {
     renderHead();
     render();
     renderPanel();
+    renderViews();
     loadFeed();
   } catch (e) {
     $("#rows").innerHTML = `<tr><td colspan="${cols}" class="loading">⚠ ${e}</td></tr>`;
@@ -336,6 +337,80 @@ function renderWeights() {
     });
     el.addEventListener("change", () => load(false));
   });
+}
+
+/* ── saved views — a named weight configuration, per telescope ───────
+   Persisted client-side (localStorage): nothing here is per-user data the
+   server needs to know about, and a slider config is meaningless without
+   the browser that set it, so there's no reason to round-trip it through
+   the API. */
+const VIEWS_KEY = "observatory_views";
+
+function loadAllViews() {
+  try {
+    return JSON.parse(localStorage.getItem(VIEWS_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+function saveAllViews(all) {
+  try {
+    localStorage.setItem(VIEWS_KEY, JSON.stringify(all));
+  } catch {
+    /* storage full or disabled — saved views just won't persist */
+  }
+}
+function viewsForScope() {
+  return loadAllViews()[state.slug] || [];
+}
+function renderViews() {
+  const views = viewsForScope();
+  $("#views-list").innerHTML =
+    views
+      .map(
+        (v, i) => `<span class="view-chip" data-i="${i}">
+          <b data-i="${i}" title="Apply this view">${v.name}</b>
+          <span class="del" data-i="${i}" title="Delete this view">×</span>
+        </span>`
+      )
+      .join("") || `<span class="views-empty">NO SAVED VIEWS YET</span>`;
+  $("#views-list").querySelectorAll("b[data-i]").forEach((el) => {
+    el.addEventListener("click", () => applyView(views[+el.dataset.i]));
+  });
+  $("#views-list").querySelectorAll(".del").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteView(+el.dataset.i);
+    });
+  });
+}
+function applyView(view) {
+  if (!view) return;
+  state.weights = { ...view.weights };
+  renderWeights();
+  load(false);
+}
+function deleteView(i) {
+  const all = loadAllViews();
+  const views = all[state.slug] || [];
+  views.splice(i, 1);
+  all[state.slug] = views;
+  saveAllViews(all);
+  renderViews();
+}
+function saveCurrentView() {
+  if (!state.slug || !Object.keys(state.weights).length) return;
+  const name = (prompt("Name this weighting?") || "").trim().slice(0, 40);
+  if (!name) return;
+  const all = loadAllViews();
+  const views = all[state.slug] || [];
+  const entry = { name, weights: { ...state.weights } };
+  const existing = views.findIndex((v) => v.name === name);
+  if (existing >= 0) views[existing] = entry;
+  else views.push(entry);
+  all[state.slug] = views;
+  saveAllViews(all);
+  renderViews();
 }
 
 function filtered() {
@@ -540,6 +615,7 @@ $("#scored-only").addEventListener("change", (e) => { state.scoredOnly = e.targe
 $("#hide-noise").addEventListener("change", (e) => { state.hideNoise = e.target.checked; render(); });
 $("#refresh").addEventListener("click", () => load(true));
 $("#reset-weights").addEventListener("click", () => { state.weights = {}; load(false); });
+$("#save-view").addEventListener("click", saveCurrentView);
 
 /* ── boot ───────────────────────────────────── */
 (async function boot() {
