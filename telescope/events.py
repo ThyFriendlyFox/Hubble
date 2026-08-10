@@ -12,8 +12,12 @@ from dataclasses import dataclass, field as dc_field
 
 
 def _fmt(template, row, extra):
-    ctx = dict(row)
-    ctx.update(extra)
+    # A field that's None (present but unknown, not missing from the row —
+    # e.g. hn_growth when there weren't enough stories to compute one) would
+    # otherwise render as the literal text "None" in a headline, since that's
+    # just what str.format() does with it.
+    ctx = {k: ("—" if v is None else v) for k, v in row.items()}
+    ctx.update({k: ("—" if v is None else v) for k, v in extra.items()})
     try:
         return template.format(**ctx)
     except (KeyError, IndexError, ValueError):
