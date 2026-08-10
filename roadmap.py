@@ -856,6 +856,42 @@ PHASES = [
                        "Agents, Local Inference and Mechanistic "
                        "Interpretability, all real events already visible in "
                        "the dev server's own logs"},
+            {"name": "Fixed a stale-response race condition when switching telescopes",
+             "done": True,
+             "detail": "found doing a full pass over every remaining untested "
+                       "UI mechanism (search, column sort, HIDE NOISE/SCORED "
+                       "ONLY, watchlist, saved views, toggles, tooltip, "
+                       "REFRESH) after the last two iterations' cross-"
+                       "telescope-join fixes — the REFRESH button check "
+                       "surfaced a real, cleanly reproducible bug. load() in "
+                       "static/app.js reads state.slug into its request URL, "
+                       "awaits the fetch, then unconditionally applies "
+                       "whatever comes back. With no request sequencing, "
+                       "clicking REFRESH on one telescope (forces a live "
+                       "fetch, can take minutes on a cold cache) and then "
+                       "switching to a different, already-cached telescope "
+                       "starts a second, independent load() — and whichever "
+                       "fetch happens to resolve last wins, regardless of "
+                       "which one reflects the user's actual most recent "
+                       "action. Reproduced cleanly: refresh Jackson, switch "
+                       "to Simons three-tenths of a second later, wait for "
+                       "both to finish — the board reverted to showing "
+                       "Jackson's stale refreshed data instead of Simons, "
+                       "which is what the user actually asked to see last. "
+                       "Fixed with a staleness guard: load() now captures "
+                       "the slug it was called for and discards its own "
+                       "result (skips every state mutation and re-render) if "
+                       "state.slug no longer matches by the time the fetch "
+                       "resolves — a switch that happened while the request "
+                       "was in flight already reflects what the user wants "
+                       "to see. Verified against the exact reproduction "
+                       "above, live: after the fix, waiting for both "
+                       "requests to fully resolve leaves the board correctly "
+                       "showing Simons (21 real rows), not Jackson. No "
+                       "automated regression test added — this file has no "
+                       "JS test framework, matching how every other "
+                       "frontend-only fix this session was verified live "
+                       "rather than via an automated test"},
         ],
     },
 ]

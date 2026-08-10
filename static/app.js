@@ -293,19 +293,27 @@ async function load(refresh = false) {
     $("#rows").innerHTML = `<tr><td class="loading">NO TELESCOPE ENABLED — TURN ONE ON UNDER TELESCOPES</td></tr>`;
     return;
   }
+  // A forced refresh can take minutes on a telescope with a cold cache
+  // (Kepler's paced per-issuer lookups, a Holmdel sweep hitting arXiv's
+  // throttle). Switching to a different, already-cached telescope while
+  // that request is still in flight starts a second, independent load()
+  // -- with no guard, whichever fetch happens to resolve last would win
+  // and silently revert the board back to the wrong telescope's stale
+  // data, even though switching away was the more recent user action.
+  const requestedSlug = state.slug;
   $("#refresh").disabled = true;
   const cols = state.meta ? state.meta.columns.length + 1 : 8;
   $("#rows").innerHTML = `<tr><td colspan="${cols}" class="loading">OBSERVING</td></tr>`;
   const wq = Object.entries(state.weights).map(([k, v]) => `${k}:${v}`).join(",");
-  const url = `/api/telescope/${state.slug}?weights=${encodeURIComponent(wq)}${
+  const url = `/api/telescope/${requestedSlug}?weights=${encodeURIComponent(wq)}${
     refresh ? "&refresh=1" : ""
   }`;
   try {
     const r = await fetch(url);
     const data = await r.json();
+    if (state.slug !== requestedSlug) return;   // superseded by a later switch
     if (data.error) {
       $("#rows").innerHTML = `<tr><td colspan="${cols}" class="loading">⚠ ${data.error}</td></tr>`;
-      $("#refresh").disabled = false;
       return;
     }
     state.meta = data.telescope;
@@ -322,9 +330,10 @@ async function load(refresh = false) {
     renderViews();
     loadFeed();
   } catch (e) {
+    if (state.slug !== requestedSlug) return;
     $("#rows").innerHTML = `<tr><td colspan="${cols}" class="loading">⚠ ${e}</td></tr>`;
   } finally {
-    $("#refresh").disabled = false;
+    if (state.slug === requestedSlug) $("#refresh").disabled = false;
   }
 }
 
