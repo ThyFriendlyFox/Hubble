@@ -121,8 +121,33 @@ PHASES = [
                        "iteration (paper_growth is still None while OpenAlex's quota "
                        "is exhausted), so verified end-to-end against a real Holmdel "
                        "row with realistic values patched in for the still-down signal"},
-            {"name": "Topic auto-discovery", "done": False,
-             "detail": "graduate from curated watchlist to embedding-cluster resolution"},
+            {"name": "Holmdel UNLISTED panel", "done": True,
+             "detail": "new secondary panel — HN stories with 80+ points in the last "
+                       "14 days that match none of the curated watchlist's topic "
+                       "queries. TELESCOPES.md's stated path for topics (which have "
+                       "no natural join key) is 'curated watchlist that auto-expands "
+                       "... graduate to embedding-cluster matching later' — this is "
+                       "the auto-expand half, not the embedding-cluster half, which "
+                       "stays genuinely future work below since it needs embedding "
+                       "infrastructure this deployment doesn't have. Deliberately a "
+                       "discovery aid, not a new ranked signal: no attempt to cluster "
+                       "the unmatched titles into candidate topics automatically, "
+                       "same shape as Jackson's UNMAPPED panel surfacing defense "
+                       "startups outside its own board rather than trying to score "
+                       "them. Needed base.py's panels() list support, already built "
+                       "for Jackson, so Holmdel's existing FIELDS panel and this one "
+                       "coexist. Verified against real, current data: correctly "
+                       "surfaced 20 genuinely off-watchlist trending stories (a "
+                       "DeepSeek model release, an Oracle/OpenJDK AI-code ban, "
+                       "Danish high schools requiring verbal defense of written "
+                       "work) and correctly excluded anything matching a curated "
+                       "topic phrase"},
+            {"name": "Topic auto-discovery · embedding-cluster resolution", "done": False,
+             "detail": "the harder half of graduating past a fixed watchlist — "
+                       "clustering emergent topics by meaning rather than exact "
+                       "phrase match. Needs embedding infrastructure (a model or a "
+                       "keyed API) this deployment doesn't have; not attempted "
+                       "without one"},
             {"name": "Semantic Scholar key", "done": False,
              "detail": "still blocked without one — its unauthenticated quota is a "
                        "small pool shared globally by every unkeyed caller, confirmed "

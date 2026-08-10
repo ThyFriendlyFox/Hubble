@@ -79,6 +79,8 @@ GITHUB_DAYS = 180       # GitHub comparison window — matches the research cade
 MIN_REPOS = 6           # below this combined count, repo growth is noise
 ARXIV_DAYS = 180        # arXiv comparison window — same cadence as OpenAlex
 MIN_ARXIV = 15          # below this combined count, preprint growth is noise
+UNLISTED_WINDOW_DAYS = 14   # UNLISTED panel: how far back to look for HN stories
+UNLISTED_MIN_POINTS = 80    # UNLISTED panel: floor for "actually trending"
 
 
 @dataclass(frozen=True)
@@ -331,7 +333,7 @@ class Holmdel(Telescope):
     )
 
     def source_keys(self):
-        return ["hn", "wikipedia", "npm", "openalex", "arxiv", "github"]
+        return ["hn", "wikipedia", "npm", "openalex", "arxiv", "github", "hn_unlisted"]
 
     # ── sources ──────────────────────────────────────────────────────────
     def _hn(self, ttl):
@@ -682,6 +684,67 @@ class Holmdel(Telescope):
             })
         return out
 
+    # ── secondary panel: attention the curated watchlist doesn't see ─────
+    def _unlisted_panel(self, force):
+        """Trending HN stories that don't match any curated topic query.
+
+        TELESCOPES.md's stated path for Holmdel's hardest problem (topics
+        have no natural join key) is "curated watchlist that auto-expands,
+        graduate to embedding-cluster matching later." Full embedding-cluster
+        resolution needs infrastructure this deployment doesn't have; this is
+        the auto-expand half — a discovery aid surfacing what the curated
+        list doesn't see, not a new ranked signal, the same shape as
+        Jackson's UNMAPPED panel for defense startups outside its own board.
+        """
+        ttl = self.ttl(force)
+
+        def go():
+            cutoff = int(time.time()) - UNLISTED_WINDOW_DAYS * 86400
+            data = try_json(
+                "https://hn.algolia.com/api/v1/search_by_date"
+                f"?tags=story&numericFilters=points>{UNLISTED_MIN_POINTS},"
+                f"created_at_i>{cutoff}&hitsPerPage=100",
+                default={},
+            )
+            return data.get("hits") or []
+
+        hits = self.cache.cached("hn_unlisted", ttl, go, is_empty=lambda r: not r)
+        if not hits:
+            return None
+
+        known = [t.query.lower() for t in TOPICS] + [t.name.lower() for t in TOPICS]
+
+        def on_watchlist(title):
+            title_l = title.lower()
+            return any(k in title_l for k in known)
+
+        rows = []
+        for h in hits:
+            title = h.get("title")
+            if not title or on_watchlist(title):
+                continue
+            rows.append({
+                "title": title,
+                "points": h.get("points") or 0,
+                "comments": h.get("num_comments") or 0,
+                "link": f"https://news.ycombinator.com/item?id={h.get('objectID')}",
+            })
+        if not rows:
+            return None
+        rows.sort(key=lambda r: r["points"], reverse=True)
+        return {
+            "title": "UNLISTED · TRENDING OUTSIDE THE WATCHLIST",
+            "subtitle": f"HN stories with {UNLISTED_MIN_POINTS}+ points in the last "
+                        f"{UNLISTED_WINDOW_DAYS} days matching none of the curated topics",
+            "columns": [
+                {"field": "title", "label": "STORY", "fmt": "text"},
+                {"field": "points", "label": "POINTS", "fmt": "int"},
+                {"field": "comments", "label": "COMMENTS", "fmt": "int"},
+                {"field": "link", "label": "LINK", "fmt": "url"},
+            ],
+            "rows": rows[:20],
+        }
+
     # ── secondary panel: which fields are heating up ─────────────────────
     def context(self, force=False):
         rows = self.collect(force=force)
@@ -710,14 +773,20 @@ class Holmdel(Telescope):
             return None
         out.sort(key=lambda r: r["wiki_growth"] if r["wiki_growth"] is not None else -999,
                  reverse=True)
-        return {
-            "title": "FIELDS · WHERE CURIOSITY IS MOVING",
-            "subtitle": "Mean growth across the watchlist topics in each field",
-            "columns": [
-                {"field": "field", "label": "FIELD", "fmt": "text"},
-                {"field": "topics", "label": "TOPICS", "fmt": "int"},
-                {"field": "hn_growth", "label": "HN TREND", "fmt": "pct"},
-                {"field": "wiki_growth", "label": "WIKI TREND", "fmt": "pct"},
-            ],
-            "rows": out,
-        }
+        panels = []
+        if out:
+            panels.append({
+                "title": "FIELDS · WHERE CURIOSITY IS MOVING",
+                "subtitle": "Mean growth across the watchlist topics in each field",
+                "columns": [
+                    {"field": "field", "label": "FIELD", "fmt": "text"},
+                    {"field": "topics", "label": "TOPICS", "fmt": "int"},
+                    {"field": "hn_growth", "label": "HN TREND", "fmt": "pct"},
+                    {"field": "wiki_growth", "label": "WIKI TREND", "fmt": "pct"},
+                ],
+                "rows": out,
+            })
+        unlisted = self._unlisted_panel(force)
+        if unlisted:
+            panels.append(unlisted)
+        return panels or None
