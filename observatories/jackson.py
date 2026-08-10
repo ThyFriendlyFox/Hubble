@@ -335,6 +335,30 @@ class Jackson(Telescope):
             })
         return rows
 
+    # ── backfill: a real trailing-12m reading from ~a year ago, already on hand
+    def historical_rows(self, rows):
+        """obligations_prior is already a genuine reading — the trailing-12m
+        obligations figure as of roughly a year before today's fetch, not a
+        number invented for this. Reusing it as a synthetic baseline means
+        the very first sweep can announce real momentum (a prime whose
+        obligations grew since that reading) instead of nothing until a
+        second live sweep, which at a 24h poll cadence is a full day away.
+        award_count/avg_award have no stored prior figure and are left None
+        rather than carried forward from the current reading."""
+        out = []
+        for r in rows:
+            prior = r.get("obligations_prior")
+            if prior is None:
+                continue
+            out.append({
+                "key": r["key"], "name": r["name"], "link": r.get("link"),
+                "obligations_12m": prior, "obligations_prior": None,
+                "growth_pct": None, "award_count": None, "avg_award": None,
+                "uei_count": r.get("uei_count"), "uei": r.get("uei"),
+                "sources": ["usaspending"], "noise": r.get("noise", False),
+            })
+        return out
+
     # ── secondary panels: where money is flowing, and who isn't on the map yet
     def context(self, force=False):
         panels = []

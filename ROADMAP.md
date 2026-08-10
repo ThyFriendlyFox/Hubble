@@ -44,7 +44,7 @@ _Generated from `roadmap.py`, which also backs the dashboard's ROADMAP tab._
 - [ ] **Topic auto-discovery** — graduate from curated watchlist to embedding-cluster resolution
 - [ ] **Semantic Scholar key** — still blocked without one — its unauthenticated quota is a small pool shared globally by every unkeyed caller, confirmed not a proxy artifact by retrying locally with backoff
 
-## PHASE 3 · MAKING THE SIGNAL SHARPER  ·  `next`  (4/8)
+## PHASE 3 · MAKING THE SIGNAL SHARPER  ·  `next`  (5/8)
 
 > Everything here improves telescopes that already exist.
 
@@ -54,7 +54,7 @@ _Generated from `roadmap.py`, which also backs the dashboard's ROADMAP tab._
 - [ ] **Jackson tech-area board** — promote the PSC panel into a rankable second board
 - [x] **Jackson · unmapped defense startups** — cross-telescope join, not a new source — Jackson's obligations board can only see companies that already hold a DoD contract; a new panel reads Kepler's already-cached Form D feed (never forces it to refresh) and keeps filings whose name or industry reads defense/dual-use. Keyword-on-name only, so it misses deliberately-named stealth companies (Anduril doesn't say 'defense' anywhere) and is often empty — obvious-by-name defense filers are rare in any 12-day window. Needed a kernel change: telescope.panels() so a telescope can return more than one secondary board (Jackson now has two)
 - [ ] **Simons 13F whale tracking** — EDGAR 13F position deltas; 45-day lag stated on the row
-- [ ] **Backfill history** — seed snapshots from historical data so events fire on day one
+- [x] **Backfill history** — new Telescope.historical_rows() hook: reconstructs a real one-period-ago baseline from data a telescope already fetched for its own growth math (a prior-window value, never fabricated), so the very first sweep can diff against something instead of announcing nothing until a second live sweep — a full day away at a 24h poll cadence. Wired into Holmdel and Jackson, which already carry the needed prior fields; Kepler's Form D filings are discrete point-in-time events with nothing to reconstruct, so it correctly gets none — the honest default, not a gap to fill. Verified against real cached data, not synthetic: simulating Holmdel's and Jackson's first-ever sweep produced 28 and 41 real events respectively (AI Agents repos +248%, Dynetics obligations +127%, both matching numbers already visible on the live boards). That verification also surfaced a real, unrelated bug — a None field rendered as the literal text 'None' in a headline — fixed in telescope/events.py
 - [x] **Per-signal explanations** — hover a score to see raw value, normalised value, weight and point contribution per signal, plus why a row was dampened if it was — generic across all six telescopes
 
 ## PHASE 4 · THE OBSERVATORY LAYER  ·  `later`  (0/6)

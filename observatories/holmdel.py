@@ -503,6 +503,48 @@ class Holmdel(Telescope):
             })
         return rows
 
+    # ── backfill: a real reading from ~90-180 days ago, already on hand ──
+    def historical_rows(self, rows):
+        """Every source here already fetches a 'prior window' value as part
+        of computing growth — that reading is genuinely from ~90-180 days
+        ago, not fabricated for this. Reusing it as a synthetic baseline
+        means Holmdel's very first sweep can announce real events instead of
+        nothing until a second live sweep, which at a 24h poll cadence is a
+        full day away. Fields with no stored prior (npm's point-in-time
+        download count, HN's peak score) are left None rather than carried
+        forward from the current reading, which would misrepresent them as
+        historical."""
+        out = []
+        for r in rows:
+            hn_recent = r.get("hn_prior")
+            wiki_recent = r.get("wiki_prior")
+            paper_recent = r.get("paper_prior")
+            repo_recent = r.get("repo_prior")
+            spread = sum([
+                bool(hn_recent), bool(wiki_recent),
+                bool(paper_recent), bool(repo_recent),
+            ])
+            out.append({
+                "key": r["key"], "name": r["name"], "group": r.get("group"),
+                "link": r.get("link"),
+                "hn_recent": hn_recent, "hn_prior": None, "hn_growth": None,
+                "hn_points": None,
+                "wiki_recent": wiki_recent, "wiki_prior": None,
+                "wiki_growth": None,
+                "paper_recent": paper_recent, "paper_prior": None,
+                "paper_growth": None,
+                "repo_recent": repo_recent, "repo_prior": None,
+                "repo_growth": None, "repo_stars": None,
+                "npm_downloads": None,
+                "spread": round(spread / 5 * 100, 1),
+                "sources": (["hn"] if hn_recent else []) +
+                           (["wikipedia"] if wiki_recent else []) +
+                           (["openalex"] if paper_recent else []) +
+                           (["github"] if repo_recent else []) or ["hn"],
+                "noise": spread == 0,
+            })
+        return out
+
     # ── secondary panel: which fields are heating up ─────────────────────
     def context(self, force=False):
         rows = self.collect(force=force)

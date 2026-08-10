@@ -131,3 +131,12 @@ class SnapshotStore:
             if events:
                 self._append_events(events)
             return events
+
+    def seed(self, rows, ts):
+        """Write a snapshot directly, without diffing or emitting events —
+        for Telescope._maybe_backfill's synthetic-but-real baseline. Never
+        overwrites real history: only takes effect while there is none."""
+        with self._lock:
+            if self.latest() is not None:
+                return
+            self._save(rows, ts)

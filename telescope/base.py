@@ -81,6 +81,22 @@ class Telescope:
         """Cache keys whose age is shown in the freshness readout."""
         return []
 
+    def historical_rows(self, rows):
+        """Optional: reconstruct a real one-period-ago version of `rows` from
+        fields this telescope already fetched about its own recent past (a
+        prior-window value it already computes for growth, an earlier point
+        already sitting in a cached time series) — never fabricated, only
+        reused. When this returns something, the very first sweep this
+        telescope ever runs can diff against a genuine baseline and announce
+        real events immediately, instead of announcing nothing until a
+        second live sweep happens, which for a 24h poll cadence can be a
+        full day away. Returning None (the default) is always the honest
+        fallback for telescopes with no real prior-period data to reuse —
+        Kepler's Form D filings are discrete point-in-time events with
+        nothing resembling "the recent past" to reconstruct.
+        """
+        return None
+
     def context(self, force=False):
         """Optional secondary panel(s) for domains where the ranked board
         isn't the whole story — tech-area spend for Jackson, the yield curve
@@ -134,11 +150,29 @@ class Telescope:
     def sweep(self, notifier=None):
         """Force-fetch, score with DEFAULT weights, detect changes, dispatch."""
         rows = self.collect(force=True)
-        events = self.store.record(self.rank(rows))
+        ranked = self.rank(rows)
+        self._maybe_backfill(ranked)
+        events = self.store.record(ranked)
         self._last_sweep = time.time()
         if notifier and events:
             notifier.dispatch(events, self)
         return events
+
+    def _maybe_backfill(self, ranked):
+        """On this telescope's very first-ever sweep, seed a real (not
+        fabricated) baseline snapshot from historical_rows() so this same
+        sweep can diff against something instead of the diff engine
+        returning nothing until a second live sweep happens."""
+        if self.store.latest() is not None:
+            return
+        backfill = self.historical_rows(ranked)
+        if not backfill:
+            return
+        seeded = self.rank([dict(r) for r in backfill])
+        # Dated one poll cycle back so downstream freshness math (anything
+        # reading snapshot timestamps) stays coherent with what "the last
+        # reading" actually means for this telescope's own cadence.
+        self.store.seed(seeded, time.time() - self.poll_seconds)
 
     def safe_sweep(self, notifier=None):
         """sweep() that records the failure instead of propagating it."""

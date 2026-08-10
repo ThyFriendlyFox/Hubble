@@ -13,6 +13,7 @@ import shutil                                                     # noqa: E402
 import tempfile                                                   # noqa: E402
 
 from telescope import ranking                                    # noqa: E402
+from telescope.base import Telescope                             # noqa: E402
 from telescope.cache import Cache                                # noqa: E402
 from telescope.events import (ClimberRule, CrossoverRule, DeltaRule,  # noqa: E402
                               NewEntrantRule, NewLeaderRule, ThresholdRule)
@@ -217,6 +218,117 @@ def test_cache_writes_empty_result_when_nothing_cached_yet():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ── backfill ─────────────────────────────────────────────────────────────
+def _isolated_scope(cls):
+    """Instantiate a test Telescope with its cache/store redirected to a
+    throwaway tmp dir, so tests never touch the real data/ directory beyond
+    the harmless empty namespace folder __init__ always creates."""
+    tmp = tempfile.mkdtemp()
+    scope = cls()
+    scope.cache.dir = tmp
+    scope.store.dir = os.path.join(tmp, "history")
+    scope.store.events_file = os.path.join(tmp, "events.json")
+    os.makedirs(scope.store.dir, exist_ok=True)
+    return scope, tmp
+
+
+def test_backfill_seeds_a_real_baseline_so_first_sweep_can_announce():
+    """historical_rows() lets a telescope's very first sweep diff against a
+    genuine one-period-ago reading instead of announcing nothing until a
+    second live sweep — which at a 24h poll cadence is a full day away."""
+    class Scope(Telescope):
+        slug = "test_backfill_ns"
+        signals = (Signal("v", "value", "VALUE"),)
+        default_weights = {"v": 100}
+        rules = (DeltaRule(field="value", direction="up", frac=0.5, min_abs=1,
+                           type="test_delta"),)
+        snapshot_fields = ("value",)
+        poll_seconds = 3600
+
+        def collect(self, force=False):
+            # A second, unchanging row gives normalisation something to
+            # scale against -- with only one row ever in play, every score
+            # normalises to the same flat 0 regardless of its raw value,
+            # which would make prev and curr look "unchanged" for reasons
+            # that have nothing to do with backfill.
+            return [
+                {"key": "a", "name": "A", "value": 10,
+                 "noise": False, "sources": ["x"], "link": ""},
+                {"key": "b", "name": "B", "value": 1,
+                 "noise": False, "sources": ["x"], "link": ""},
+            ]
+
+        def historical_rows(self, rows):
+            # A real prior-window reading, the same shape Holmdel/Jackson
+            # already have on hand -- not fabricated for the test.
+            return [
+                {"key": "a", "name": "A", "value": 1,
+                 "noise": False, "sources": ["x"], "link": ""},
+                {"key": "b", "name": "B", "value": 1,
+                 "noise": False, "sources": ["x"], "link": ""},
+            ]
+
+    scope, tmp = _isolated_scope(Scope)
+    try:
+        events = scope.sweep()
+        assert events, "a genuine prior reading exists — the first sweep should announce it"
+        assert events[0]["headline"] and "{" not in events[0]["headline"]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_no_backfill_is_the_honest_default_on_a_true_first_sweep():
+    """A telescope that doesn't override historical_rows() (Kepler: Form D
+    filings are discrete events, nothing to reconstruct) must announce
+    nothing on its first sweep rather than fabricate a baseline."""
+    class Scope(Telescope):
+        slug = "test_no_backfill_ns"
+        signals = (Signal("v", "value", "VALUE"),)
+        default_weights = {"v": 100}
+        rules = (DeltaRule(field="value", direction="up", frac=0.5, min_abs=1,
+                           type="test_delta"),)
+        snapshot_fields = ("value",)
+
+        def collect(self, force=False):
+            return [{"key": "a", "name": "A", "value": 10,
+                     "noise": False, "sources": ["x"], "link": ""}]
+
+    scope, tmp = _isolated_scope(Scope)
+    try:
+        assert scope.sweep() == []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_backfill_never_overwrites_real_history():
+    """seed() must be a no-op once a real snapshot already exists — it's a
+    first-sweep-only fallback, not a way to rewrite what actually happened."""
+    class Scope(Telescope):
+        slug = "test_backfill_no_overwrite_ns"
+        signals = (Signal("v", "value", "VALUE"),)
+        default_weights = {"v": 100}
+        snapshot_fields = ("value",)
+
+        def collect(self, force=False):
+            return [{"key": "a", "name": "A", "value": 10,
+                     "noise": False, "sources": ["x"], "link": ""}]
+
+        def historical_rows(self, rows):
+            return [{"key": "a", "name": "A", "value": 1,
+                     "noise": False, "sources": ["x"], "link": ""}]
+
+    scope, tmp = _isolated_scope(Scope)
+    try:
+        scope.sweep()
+        first_count = scope.store.count()
+        scope.store.seed(scope.rank([{"key": "a", "name": "A", "value": 999,
+                                       "noise": False, "sources": ["x"], "link": ""}]),
+                          0.0)
+        assert scope.store.count() == first_count
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_crossover_rule_reads_leading_from_prev_and_lagging_from_curr():
     """Holmdel's 'research -> builders' shape: unlike every other rule, the
     two fields it compares live at two different points in time."""
@@ -244,3 +356,16 @@ def test_bad_headline_template_does_not_raise():
     rule = NewEntrantRule(max_rank=10, headline="{nonexistent_field}")
     events = rule.row(None, {"name": "n", "rank": 1}, 0)
     assert events and events[0]["headline"]
+
+
+def test_none_field_renders_as_a_dash_not_the_word_none():
+    """A field that's None (present, unknown -- not absent from the row)
+    used to render as the literal text 'None' in a headline: found live
+    while verifying backfill, which fires enough climbers at once to make
+    this common combination (a real rank climb, no HN growth reading yet)
+    actually show up."""
+    rule = ClimberRule(rank_delta=1, score_delta=0,
+                        headline="{name} moved (HN {hn_growth}%).")
+    events = rule.row({"rank": 5, "score": 1}, {"name": "n", "rank": 1, "score": 1,
+                                                 "hn_growth": None}, 0)
+    assert events[0]["headline"] == "n moved (HN —%)."

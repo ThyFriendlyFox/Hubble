@@ -162,8 +162,24 @@ PHASES = [
                        "one secondary board (Jackson now has two)"},
             {"name": "Simons 13F whale tracking", "done": False,
              "detail": "EDGAR 13F position deltas; 45-day lag stated on the row"},
-            {"name": "Backfill history", "done": False,
-             "detail": "seed snapshots from historical data so events fire on day one"},
+            {"name": "Backfill history", "done": True,
+             "detail": "new Telescope.historical_rows() hook: reconstructs a real "
+                       "one-period-ago baseline from data a telescope already fetched "
+                       "for its own growth math (a prior-window value, never "
+                       "fabricated), so the very first sweep can diff against "
+                       "something instead of announcing nothing until a second live "
+                       "sweep — a full day away at a 24h poll cadence. Wired into "
+                       "Holmdel and Jackson, which already carry the needed prior "
+                       "fields; Kepler's Form D filings are discrete point-in-time "
+                       "events with nothing to reconstruct, so it correctly gets "
+                       "none — the honest default, not a gap to fill. Verified "
+                       "against real cached data, not synthetic: simulating "
+                       "Holmdel's and Jackson's first-ever sweep produced 28 and 41 "
+                       "real events respectively (AI Agents repos +248%, Dynetics "
+                       "obligations +127%, both matching numbers already visible on "
+                       "the live boards). That verification also surfaced a real, "
+                       "unrelated bug — a None field rendered as the literal text "
+                       "'None' in a headline — fixed in telescope/events.py"},
             {"name": "Per-signal explanations", "done": True,
              "detail": "hover a score to see raw value, normalised value, weight "
                        "and point contribution per signal, plus why a row was "
