@@ -21,11 +21,11 @@ No API keys. Every source below is public.
 
 | | Telescope | Domain | Entity | Sources |
 |---|---|---|---|---|
-| 🔭 | **Hubble** | AI | models | HuggingFace · OpenRouter · Artificial Analysis · arena |
-| 🛡 | **Jackson** | Defense | primes | USAspending obligations · PSC capability areas · SBIR |
-| 💰 | **Simons** | Capital | indicators | FRED · Yahoo Finance · CoinGecko |
-| 🪐 | **Kepler** | Startups | issuers | SEC Form D · EDGAR · Hacker News |
-| 📡 | **Holmdel** | Ideas | topics | Hacker News · Wikipedia pageviews · npm |
+| 🔭 | **Hubble** | AI | models | HuggingFace · OpenRouter · Artificial Analysis · Design Arena (both embedded in OpenRouter) |
+| 🛡 | **Jackson** | Defense | primes | USAspending obligations · PSC capability areas · SBIR · Kepler (cross-reference) |
+| 💰 | **Simons** | Capital | indicators | FRED · Yahoo Finance · CoinGecko · SEC 13F-HR |
+| 🪐 | **Kepler** | Startups | issuers | SEC Form D · EDGAR · Hacker News · Greenhouse/Lever/Ashby · Holmdel (cross-reference) |
+| 📡 | **Holmdel** | Ideas | topics | Hacker News · Wikipedia pageviews · npm · OpenAlex · arXiv · GitHub |
 | 🚛 | **Reddington** | Logistics | gauges | FRED freight series · freight-sector equities |
 
 Each is **independently toggleable** from the TELESCOPES tab. A disabled
@@ -43,13 +43,19 @@ laptop or light the whole observatory on a server. Toggle state persists to
 - **Simons** — deliberately **not** a levels dashboard. It ranks indicators by
   how far each is reading from its own trailing normal (z-score, range
   extremity, vol expansion), so the board answers "what should I look at today"
-  and the feed announces regime crossings.
+  and the feed announces regime crossings. A secondary **WHALE MOVES** panel
+  tracks quarter-over-quarter 13F position deltas across a curated list of
+  large filers — positioning from months ago (13F-HR is due 45 days after
+  quarter end), not now, and the caveat says so.
 - **Holmdel** — idea velocity across a curated watchlist, ranked on
   acceleration rather than volume, with a cross-source **spread** signal
-  (one surface is a rumour, three is a trend). It ships *without* a research
-  source and says so: arXiv, Semantic Scholar and OpenAlex all rate-limit this
-  deployment and Crossref's API is an OR match, so it reads attention and
-  adoption, not scholarship.
+  (one surface is a rumour, three is a trend) across six independent
+  surfaces, including real research velocity from OpenAlex and arXiv.
+  Semantic Scholar stays unusable (its unauthenticated quota is a small
+  pool shared globally, not a proxy artifact) and Crossref's API is an OR
+  match whose counts aren't real topic counts, so neither is used. A
+  `crossing_over` event fires when a topic's papers accelerate first and
+  its repos follow — research becoming builders.
 - **Reddington** — freight at the resolution the free tier honestly supports:
   national index level, not lane level. Volume (tonnage, carloads) against cost
   (diesel, freight PPI), plus the market's own read via carrier equities.
@@ -57,8 +63,11 @@ laptop or light the whole observatory on a server. Toggle state persists to
   private raise must file a **Form D** within 15 days of first sale, with the
   offering size and amount sold. It's public, structured, and usually lands
   before any press. A real raise with no public footprint is flagged
-  `STEALTH`. This is the complement to warm-intro dealflow: it surfaces what
-  nobody has introduced you to.
+  `STEALTH`, and a `GRADUATED` event fires the moment it gets its first real
+  public attention. Hiring velocity (open roles on Greenhouse, Lever or
+  Ashby, guessed from the company name) is layered on as the single most
+  honest traction signal available for free. This is the complement to
+  warm-intro dealflow: it surfaces what nobody has introduced you to.
 
 ## How a telescope works
 

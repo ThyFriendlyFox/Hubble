@@ -1059,6 +1059,34 @@ PHASES = [
                        "own Design Arena data, unchanged from before removal "
                        "since the dead fallback was already contributing "
                        "nothing"},
+            {"name": "README.md updated to match reality", "done": True,
+             "detail": "found while auditing the fleet's other sources for "
+                       "another silently-dead LMArena-style URL (systematic "
+                       "probe of every real fetch endpoint across all six "
+                       "telescopes — npm, CoinGecko, Wikimedia, FRED, Yahoo, "
+                       "GitHub search, both SEC endpoints — all genuinely "
+                       "healthy, no other dead source found) — the top-level "
+                       "README had drifted significantly out of date instead. "
+                       "It still said Holmdel 'ships without a research "
+                       "source' and listed only 3 of its 6 real sources; that "
+                       "was true when README.md was originally written but "
+                       "has been false since the OpenAlex and arXiv "
+                       "integrations shipped many iterations ago — the "
+                       "opposite failure mode from the sources this whole "
+                       "session has been fixing, understating a working "
+                       "feature instead of overstating a broken one, but the "
+                       "same honesty principle. Also missing entirely: "
+                       "Simons' WHALE MOVES panel (SEC 13F-HR), Kepler's "
+                       "hiring signal (Greenhouse/Lever/Ashby) and both "
+                       "cross-telescope panels (Jackson's UNMAPPED reading "
+                       "Kepler, Kepler's SECTOR HEAT reading Holmdel). "
+                       "Updated the instruments table and each telescope's "
+                       "description to match current, real, shipped behavior "
+                       "— including reflecting this same iteration's removal "
+                       "of Hubble's separate LMArena source from its own "
+                       "sources list. The architecture sections (kernel "
+                       "stages, adding a telescope, the API table, layout) "
+                       "were already accurate and left unchanged"},
         ],
     },
 ]
