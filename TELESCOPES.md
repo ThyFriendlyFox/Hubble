@@ -10,8 +10,11 @@ Hubble is not really an "LLM dashboard." It's an instance of a reusable pattern:
 The dashboard is just the eyepiece. The telescope is the pipeline behind it.
 This doc distills that pipeline out of the Hubble code, defines the reusable
 kernel, and specs the rest of the fleet: **Holmdel** (ideas), **Reddington**
-(logistics), **Jackson** (defense), **Simons** (capital), and a proposed sixth,
-**Kepler** (startup discovery / dealflow).
+(logistics), **Jackson** (defense), **Simons** (capital), and **Kepler**
+(startup discovery / dealflow). All six are now built and operational — this
+doc is kept as the design rationale (why the pattern is shaped this way, the
+three hard problems, the reasoning behind each telescope's join key and
+signal choices), not a todo list. `ROADMAP.md` is the todo list.
 
 ---
 
@@ -90,7 +93,7 @@ OpenRouter, benchmarks, arena. Already documented in `README.md`.
 
 ---
 
-### 📡 Holmdel — ideas
+### 📡 Holmdel — ideas *(operational)*
 
 *The Holmdel horn antenna picked up an annoying background hiss that turned out
 to be the cosmic microwave background — the biggest discovery hiding in the
@@ -107,7 +110,7 @@ noise. Exactly the mission: detect faint idea-signals before they're obvious.*
 
 ---
 
-### 🚛 Reddington — logistics
+### 🚛 Reddington — logistics *(operational)*
 
 | | |
 |---|---|
@@ -120,7 +123,7 @@ noise. Exactly the mission: detect faint idea-signals before they're obvious.*
 
 ---
 
-### 🛡 Jackson — defense
+### 🛡 Jackson — defense *(operational)*
 
 | | |
 |---|---|
@@ -133,7 +136,7 @@ noise. Exactly the mission: detect faint idea-signals before they're obvious.*
 
 ---
 
-### 💰 Simons — capital
+### 💰 Simons — capital *(operational)*
 
 | | |
 |---|---|
@@ -146,7 +149,7 @@ noise. Exactly the mission: detect faint idea-signals before they're obvious.*
 
 ---
 
-### 🪐 Kepler — startup discovery *(proposed sixth telescope)*
+### 🪐 Kepler — startup discovery *(operational)*
 
 *Kepler never saw a planet. It watched 150,000 stars for tiny periodic dips in
 brightness and found thousands of worlds from the perturbations they caused.
@@ -199,7 +202,21 @@ Once ≥2 telescopes exist, add the thin meta-layer:
   Jackson SBIR award → Kepler candidate; Holmdel `crossing_over` topic →
   Kepler sector filter; Hubble `new_leader` → Simons AI-capex watch.
 
-## 6. Recommended build order
+## 6. Build order (as it actually happened)
+
+Kept as a record, not advice — there's nothing left in this list to build.
+Per the commit that shipped them, the actual order was: kernel extraction
+first (Hubble became the first domain pack and proved the interface), then
+Jackson, Simons and Kepler together in that same commit, then Holmdel and
+Reddington last, sharing `telescope/series.py`'s time-series analytics.
+Notably not the order originally recommended below — Kepler shipped third,
+not first, and Holmdel (the hardest join-key problem) landed last as
+recommended, but alongside Reddington rather than on its own. Each domain
+pack after the kernel extraction cost roughly what the original `fetchers.py`
+cost — a few hundred lines of source adapters plus a config block, matching
+what §1 predicted.
+
+The original recommendation, for reference:
 
 1. **Extract the kernel** (small refactor, ~a day): move `cache/ranking/
    snapshots/notifier/app` into `telescope/`, parameterise `SIGNALS`,
@@ -212,6 +229,3 @@ Once ≥2 telescopes exist, add the thin meta-layer:
    problem, so let the kernel stabilise first.
 5. **Simons**, then **Reddington** — Simons once the regime-indicator set is
    chosen; Reddington last, pending a paid-data decision.
-
-Each new telescope after the refactor should cost roughly what `fetchers.py`
-cost — a few hundred lines of source adapters plus a config file.

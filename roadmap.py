@@ -1114,6 +1114,34 @@ PHASES = [
                        "genuinely blocked and then at the roadmap/Phase 5 "
                        "pattern for finding real remaining work, rather than "
                        "a first-iteration task frozen in amber"},
+            {"name": "TELESCOPES.md updated to match reality", "done": True,
+             "detail": "the last of the three onboarding docs — checked "
+                       "after explicitly (and, on reflection, wrongly) "
+                       "claiming last iteration this file was immune to the "
+                       "drift just fixed in README.md/HANDOFF.md because "
+                       "it's 'a design spec rather than a state snapshot.' "
+                       "Verified that claim instead of trusting it, the same "
+                       "discipline applied to sources all session: it was "
+                       "wrong. Kepler was still labelled 'a proposed sixth' "
+                       "telescope and tagged '(proposed sixth telescope)' in "
+                       "its own section header, even though it's been one "
+                       "of six fully operational instruments for the entire "
+                       "session. Fixed the intro framing, tagged all six "
+                       "section headers '(operational)' for consistency "
+                       "(previously only Hubble had a status tag at all), "
+                       "and reframed 'Recommended build order' as a record "
+                       "of what happened rather than forward-looking advice "
+                       "for telescopes that no longer need building. Caught "
+                       "a near-miss while writing that section: the first "
+                       "draft guessed the real build order matched the "
+                       "original recommendation (Kepler first) without "
+                       "checking — verifying against git log instead (the "
+                       "commit that shipped Jackson/Simons/Kepler together "
+                       "lists them in that order, not Kepler-first) caught "
+                       "that the guess was wrong before it shipped as a "
+                       "fabricated historical claim, kept the original "
+                       "recommendation alongside the real order for honest "
+                       "comparison rather than silently overwriting it"},
         ],
     },
 ]
