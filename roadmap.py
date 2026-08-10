@@ -520,6 +520,27 @@ PHASES = [
                        "clobbering a sibling slug's own persisted state, both "
                        "KeyError paths, get()'s memoisation, and catalog()'s "
                        "shape"},
+            {"name": "Live test coverage for historical_rows()", "done": True,
+             "detail": "the backfill hook (historical_rows()) is implemented by "
+                       "four of six telescopes (Holmdel, Jackson, Simons, "
+                       "Reddington) but had only ever been exercised by "
+                       "test_kernel.py's hand-built synthetic Telescope stand-"
+                       "ins — never against a real telescope's own live collect() "
+                       "output, so a crash or malformed row on real data could "
+                       "ship unnoticed by either suite. Re-checked OpenAlex's "
+                       "status first: still $0 daily budget remaining ('resets "
+                       "at midnight UTC', confirmed self-inflicted from this "
+                       "session's own repeated test runs, not a new block) and "
+                       "the other three usual sources (SAM.gov, Semantic "
+                       "Scholar, SBIR) unchanged — nothing newly actionable. New "
+                       "generic test in test_live.py, parametrised across all "
+                       "six telescopes against today's real data: confirms "
+                       "historical_rows() either declines honestly with None "
+                       "(Kepler and Hubble's case — nothing resembling a recent "
+                       "past to reconstruct) or returns rows that carry key/name "
+                       "and survive being run through the exact same rank() "
+                       "pipeline a real sweep uses. Passed cleanly against real "
+                       "current data for all six on the first run"},
         ],
     },
 ]

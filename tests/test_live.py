@@ -139,3 +139,23 @@ def test_context_panels_are_wellformed(scope_rows):
         for col in panel["columns"]:
             assert {"field", "label", "fmt"} <= set(col)
             assert any(col["field"] in r for r in panel["rows"])
+
+
+def test_historical_rows_is_wellformed_against_real_current_data(scope_rows):
+    """historical_rows() is otherwise only exercised by test_kernel.py's
+    hand-built synthetic Telescope stand-ins -- never against a telescope's
+    own real collect() output, so a crash or malformed row here could ship
+    unnoticed by either suite. Confirms it either declines honestly (None,
+    Kepler/Hubble's case: nothing resembling a recent past to reconstruct)
+    or returns rows that survive the same ranking pipeline a real sweep
+    uses, for every telescope against today's actual data."""
+    scope, rows = scope_rows
+    backfill = scope.historical_rows(rows)
+    if backfill is None:
+        return
+    assert backfill, f"{scope.slug}: historical_rows() returned an empty non-None list"
+    for r in backfill:
+        assert r.get("key"), f"{scope.slug}: backfill row missing key"
+        assert r.get("name"), f"{scope.slug}: backfill row missing name"
+    ranked = scope.rank([dict(r) for r in backfill])
+    assert ranked[0]["rank"] == 1
