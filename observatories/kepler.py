@@ -61,16 +61,30 @@ before being trusted. Lever and Ashby have no such endpoint, so a hit there
 rests only on the guessed slug being distinctive enough that colliding with
 an unrelated real company is implausible — the same minimum-length gate
 already used for HN attention matching, and the same weaker-evidence caveat.
+
+── SECTOR HEAT: a cross-telescope join, not a new source ────────────────────
+Holmdel's crossing_over event (a topic where research became builders — see
+telescope/events.py CrossoverRule) means something for startup discovery: a
+field where papers/preprints led and repos are now following is a field
+where founders may already be building. This panel reads Holmdel's already-
+recorded crossing_over events (never forces Holmdel to sweep) and surfaces
+Kepler's own issuers whose SEC industry maps to that topic's field. The
+mapping is hand-curated and approximate — SEC's finite industry list has no
+"aerospace" or "security" category at all, so those map to the closest
+generic tech/manufacturing bucket — and it disappears entirely if Holmdel is
+disabled, or if nothing has crossed over in the last 30 days, which is the
+common case, not a bug.
 """
 import datetime as dt
 import re
 import time
+import traceback
 from urllib.parse import quote_plus, urlparse
 
 from telescope import Column, Signal, Telescope
 from telescope.events import ClimberRule, DeltaRule, NewEntrantRule, NewLeaderRule, money
 from telescope.http import get_json, get_text, probe_text, try_json
-from telescope.registry import register
+from telescope.registry import get as get_telescope, is_enabled, register
 
 SEC_UA = {"User-Agent": "Observatory-Telescope/1.0 (thyfriendlyfox@gmail.com)"}
 SEC_DELAY = 0.12          # SEC asks for <=10 req/s; stay comfortably under
@@ -99,6 +113,25 @@ _TECH_INDUSTRIES = {
     "Biotechnology", "Pharmaceuticals", "Health Care", "Other Health Care",
     "Electronics", "Manufacturing", "Energy", "Clean Technology",
     "Medical Devices", "Hospitals & Physicians", "Airlines & Airports",
+}
+
+CROSSOVER_WINDOW_DAYS = 30   # how far back a Holmdel crossing_over still counts
+
+# Holmdel's topic fields, hand-mapped to Kepler's SEC industryGroupType
+# values — a real approximation, not a verified match. SEC's finite
+# industry list has no "aerospace" or "security" category at all, so those
+# two map to the closest generic tech/manufacturing buckets, same
+# limitation the UNMAPPED panel's keyword match already has to live with.
+GROUP_TO_INDUSTRIES = {
+    "AI": {"Technology", "Computers", "Other Technology", "Telecommunications",
+           "Electronics"},
+    "COMPUTE": {"Technology", "Computers", "Other Technology", "Electronics"},
+    "BIO": {"Biotechnology", "Pharmaceuticals", "Health Care",
+            "Other Health Care", "Medical Devices"},
+    "ENERGY": {"Energy", "Clean Technology"},
+    "MATERIALS": {"Manufacturing", "Clean Technology"},
+    "SPACE": {"Other Technology", "Manufacturing"},
+    "SECURITY": {"Technology", "Other Technology", "Computers"},
 }
 
 
@@ -184,7 +217,8 @@ class Kepler(Telescope):
     glyph = "🪐"
     tagline = "PRIVATE RAISE DETECTION"
     entity_label = "ISSUERS"
-    sources_label = "SEC FORM D · EDGAR · DOMAIN RESOLUTION · HACKER NEWS · GREENHOUSE/LEVER/ASHBY"
+    sources_label = ("SEC FORM D · EDGAR · DOMAIN RESOLUTION · HACKER NEWS · "
+                      "GREENHOUSE/LEVER/ASHBY · HOLMDEL (CROSS-REF)")
     caveat = ("US Reg D filings only — no non-US raises, and equity crowdfunding "
               "and some 4(a)(2) private placements never file. Amounts are as "
               "reported by the issuer. Funds and SPVs are flagged as noise, not "
@@ -200,7 +234,12 @@ class Kepler(Telescope):
               "Hiring is a guessed job-board slug, not a real identifier — "
               "verified against the company's own name on Greenhouse, "
               "unverified on Lever/Ashby, and absent for most issuers simply "
-              "because the guess didn't land on anything.")
+              "because the guess didn't land on anything. The SECTOR HEAT "
+              "panel cross-references Holmdel's crossing_over events by a "
+              "hand-mapped, approximate industry-to-field table, only "
+              "appears while Holmdel is enabled, and is usually empty — "
+              "nothing crossing over in the last 30 days is the common "
+              "case, not a bug.")
 
     cache_ttl = 6 * 3600
     poll_seconds = 12 * 3600
@@ -569,6 +608,16 @@ class Kepler(Telescope):
 
     # ── secondary panel: where private capital is landing ────────────────
     def context(self, force=False):
+        panels = []
+        capital = self._capital_panel(force)
+        if capital:
+            panels.append(capital)
+        heat = self._sector_heat_panel()
+        if heat:
+            panels.append(heat)
+        return panels or None
+
+    def _capital_panel(self, force=False):
         ttl = self.ttl(force)
         filings = self._filings(ttl)
         details = self._details(filings, ttl)
@@ -591,6 +640,87 @@ class Kepler(Telescope):
                 {"field": "industry", "label": "INDUSTRY", "fmt": "text"},
                 {"field": "count", "label": "RAISES", "fmt": "int"},
                 {"field": "total", "label": "TOTAL OFFERED", "fmt": "money"},
+            ],
+            "rows": rows,
+        }
+
+    # ── secondary panel: cross-telescope join, Holmdel's crossovers → here ─
+    def _crossed_over_groups(self):
+        """Recent Holmdel crossing_over events (research becoming builders —
+        see telescope/events.py CrossoverRule), resolved to each topic's
+        field/group. Reads Holmdel's already-recorded events and
+        already-cached rows only; never forces Holmdel to sweep, and
+        disappears entirely if Holmdel is disabled — the same discipline
+        Jackson's UNMAPPED panel already follows for its own Kepler read.
+        """
+        if not is_enabled("holmdel"):
+            return {}
+        try:
+            holmdel = get_telescope("holmdel")
+            events = holmdel.store.load_events(limit=200)
+            rows = holmdel.collect(force=False)
+        except Exception:
+            traceback.print_exc()
+            return {}
+        group_by_key = {r["key"]: r.get("group") for r in rows}
+        cutoff = time.time() - CROSSOVER_WINDOW_DAYS * 86400
+        out = {}
+        for e in events:
+            if e.get("type") != "crossing_over" or (e.get("ts") or 0) < cutoff:
+                continue
+            group = group_by_key.get(e.get("key"))
+            if group:
+                out.setdefault(e["name"], group)
+        return out
+
+    def _sector_heat_panel(self):
+        crossed = self._crossed_over_groups()
+        if not crossed:
+            return None
+        # Several topics can map to the same industry (two AI topics both
+        # land on "Other Technology") -- attribute all of them, not just
+        # whichever happened to be inserted first, or a row would silently
+        # look like it's tied to one topic when it's really tied to both.
+        topic_for_industry = {}
+        for topic, group in crossed.items():
+            for industry in GROUP_TO_INDUSTRIES.get(group, ()):
+                existing = topic_for_industry.get(industry)
+                topic_for_industry[industry] = (
+                    f"{existing}, {topic}" if existing else topic
+                )
+        if not topic_for_industry:
+            return None
+        matches = [
+            r for r in self.collect(force=False)
+            if not r["noise"] and r.get("industry") in topic_for_industry
+        ]
+        if not matches:
+            return None
+        matches.sort(key=lambda r: r.get("raise_size") or 0, reverse=True)
+        rows = [{
+            "name": r["name"],
+            "industry": r["industry"],
+            "raise_fmt": r.get("raise_fmt"),
+            "state": r.get("state"),
+            "filed": r.get("filed"),
+            "topic": topic_for_industry.get(r["industry"], "—"),
+        } for r in matches[:15]]
+        topics = ", ".join(sorted(set(crossed)))
+        return {
+            "title": "SECTOR HEAT · IDEAS CROSSING OVER TO BUILDERS",
+            "subtitle": (
+                f"Kepler issuers in a field where Holmdel detected research "
+                f"becoming builders in the last {CROSSOVER_WINDOW_DAYS} days "
+                f"({topics}) — industry-to-field is a hand-mapped "
+                "approximation, not a verified match"
+            ),
+            "columns": [
+                {"field": "name", "label": "ISSUER", "fmt": "text"},
+                {"field": "industry", "label": "INDUSTRY", "fmt": "text"},
+                {"field": "topic", "label": "CROSSED-OVER TOPIC", "fmt": "text"},
+                {"field": "raise_fmt", "label": "RAISE", "fmt": "text"},
+                {"field": "state", "label": "ST", "fmt": "text"},
+                {"field": "filed", "label": "FILED", "fmt": "date"},
             ],
             "rows": rows,
         }

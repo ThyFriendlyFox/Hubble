@@ -231,8 +231,28 @@ PHASES = [
         "status": "later",
         "note": "Where a fleet beats a collection: cross-telescope joins.",
         "items": [
-            {"name": "Cross-telescope joins", "done": False,
-             "detail": "Jackson SBIR award → Kepler candidate; Holmdel crossover → Kepler sector"},
+            {"name": "Cross-telescope joins · Jackson SBIR → Kepler candidate",
+             "done": False,
+             "detail": "still blocked — Jackson's own SBIR fetch has been "
+                       "unreliable (429/403) since HANDOFF flagged it, worse than "
+                       "'rate-limits hard'; not worth building a join on top of a "
+                       "source that unreliable"},
+            {"name": "Cross-telescope joins · Holmdel crossover → Kepler sector",
+             "done": True,
+             "detail": "new SECTOR HEAT panel on Kepler — reads Holmdel's already-"
+                       "recorded crossing_over events (never forces a Holmdel "
+                       "sweep) and surfaces Kepler issuers whose SEC industry maps "
+                       "to that topic's field, via a hand-curated, stated-"
+                       "approximate mapping (SEC's finite industry list has no "
+                       "'aerospace' or 'security' category at all). Verified "
+                       "against real fired events, not synthetic — crossing_over "
+                       "had actually fired twice by this iteration (Mechanistic "
+                       "Interpretability, World Models, both group=AI), and the "
+                       "panel correctly surfaced 15 real Kepler issuers in "
+                       "AI-adjacent industries. Caught and fixed a real attribution "
+                       "bug during verification: when two topics map to the same "
+                       "industry, the panel was crediting only whichever topic "
+                       "happened to be inserted first instead of both"},
             {"name": "Saved views / theses", "done": True,
              "detail": "name the current weighting, click it later to reapply — "
                        "persisted client-side (localStorage), scoped per telescope, "
