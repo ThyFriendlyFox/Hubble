@@ -364,7 +364,11 @@ class Holmdel(Telescope):
                 out[t.key] = {"recent": recent, "prior": prior, "points": points}
                 time.sleep(0.2)      # Algolia is generous but not unlimited
             return out
-        return self.cache.cached("hn", ttl, go)
+
+        def totally_failed(result):
+            return not any(v.get("recent") is not None for v in result.values())
+
+        return self.cache.cached("hn", ttl, go, is_empty=totally_failed)
 
     def _wiki(self, ttl):
         """Pageviews per topic for two adjacent windows."""
@@ -395,7 +399,11 @@ class Holmdel(Telescope):
                 }
                 time.sleep(0.1)
             return out
-        return self.cache.cached("wikipedia", ttl, go)
+
+        def totally_failed(result):
+            return not any(v.get("recent") is not None for v in result.values())
+
+        return self.cache.cached("wikipedia", ttl, go, is_empty=totally_failed)
 
     def _openalex(self, ttl):
         """Paper count per topic, for two adjacent windows.
@@ -548,7 +556,14 @@ class Holmdel(Telescope):
                     out[t.key] = data["downloads"]
                 time.sleep(0.1)
             return out
-        return self.cache.cached("npm", ttl, go)
+        # Unlike hn/wiki, a per-topic miss here is the normal shape (only
+        # topics with a canonical npm package ever get an entry, and most
+        # don't) -- but TOPICS always has at least one with t.npm set, so an
+        # entirely empty result still only means the API itself is down.
+        def totally_failed(result):
+            return not result
+
+        return self.cache.cached("npm", ttl, go, is_empty=totally_failed)
 
     # ── join ─────────────────────────────────────────────────────────────
     def collect(self, force=False):

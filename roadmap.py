@@ -351,6 +351,37 @@ PHASES = [
                        "changes"},
         ],
     },
+    {
+        "title": "PHASE 5 · HARDENING",
+        "status": "next",
+        "note": "Every named feature is either shipped or blocked on something "
+                "external (a SAM.gov key, SBIR's own unreliable API, X "
+                "credentials) — re-checked both live before starting this phase "
+                "rather than carry the assumption forward, still blocked. This "
+                "phase is for closing gaps a feature's own commit message "
+                "already flagged and deferred, so they don't just sit as "
+                "comments forever.",
+        "items": [
+            {"name": "Holmdel cache resilience — complete the rollout", "done": True,
+             "detail": "the is_empty total-failure guard (added to Cache.cached() "
+                       "after a real incident zeroed Holmdel's OpenAlex signal for "
+                       "half a day) only ever got wired into the three sources built "
+                       "after that fix — OpenAlex, arXiv, GitHub. HN, Wikipedia and "
+                       "npm were explicitly flagged in that commit as 'candidates "
+                       "for the same treatment later' and then left there across "
+                       "several iterations. Wired into all three, each with the "
+                       "shape-appropriate predicate: hn/wiki check that at least one "
+                       "topic has a non-None recent-window reading; npm (where most "
+                       "topics legitimately have no entry at all, package or not) "
+                       "checks that the result isn't empty outright, since TOPICS "
+                       "always has at least one real npm-eligible entry. Verified "
+                       "against real, current data: today's live fetch is fully "
+                       "populated for all three (32/32, 31/31, 2 real npm entries) "
+                       "and every predicate correctly returns False against it, "
+                       "then correctly returns True against a simulated total "
+                       "failure of the same shape"},
+        ],
+    },
 ]
 
 
