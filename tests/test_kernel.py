@@ -11,11 +11,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import shutil                                                     # noqa: E402
 import tempfile                                                   # noqa: E402
+from contextlib import contextmanager                             # noqa: E402
 from unittest.mock import patch                                  # noqa: E402
 
 import requests                                                   # noqa: E402
 
-from telescope import brief, http, notifier, ranking              # noqa: E402
+from telescope import brief, http, notifier, ranking, registry    # noqa: E402
 from telescope.base import Telescope                             # noqa: E402
 from telescope.cache import Cache                                # noqa: E402
 from telescope.events import (ClimberRule, CrossoverRule, DeltaRule,  # noqa: E402
@@ -676,3 +677,139 @@ def test_dispatch_brief_always_logs_regardless_of_channel_config():
         notifier.dispatch_brief("the digest text")
     mock_print.assert_called_once()
     mock_post.assert_not_called()
+
+
+# ── registry (enable/disable toggle state) ──────────────────────────────
+# Pure logic, no network -- but it's module-global state (_classes,
+# _instances, a JSON file on disk), so every test isolates it completely
+# rather than touch the real registry other tests/the app rely on.
+class _FakeTelescope:
+    slug = "fake_a"
+    name = "FAKE A"
+    domain = "TEST"
+    tagline = "T"
+    glyph = "x"
+    entity_label = "E"
+    sources_label = "S"
+    caveat = "C"
+    poll_seconds = 3600
+
+
+class _FakeTelescopeB(_FakeTelescope):
+    slug = "fake_b"
+    name = "FAKE B"
+
+
+@contextmanager
+def _isolated_registry():
+    saved = (dict(registry._classes), dict(registry._instances),
+              dict(registry._load_errors), registry.STATE_FILE)
+    registry._classes.clear()
+    registry._instances.clear()
+    registry._load_errors.clear()
+    tmp = tempfile.mkdtemp()
+    registry.STATE_FILE = os.path.join(tmp, "observatory.json")
+    try:
+        yield
+    finally:
+        classes, instances, errors, state_file = saved
+        registry._classes.clear()
+        registry._classes.update(classes)
+        registry._instances.clear()
+        registry._instances.update(instances)
+        registry._load_errors.clear()
+        registry._load_errors.update(errors)
+        registry.STATE_FILE = state_file
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_register_adds_to_the_class_table():
+    with _isolated_registry():
+        registry.register(_FakeTelescope)
+        assert registry.all_slugs() == ["fake_a"]
+
+
+def test_default_state_all_enables_every_registered_slug():
+    with _isolated_registry():
+        registry.register(_FakeTelescope)
+        registry.register(_FakeTelescopeB)
+        with patch.dict(os.environ, {"OBSERVATORY_ENABLED": "all"}, clear=True):
+            assert registry._default_state() == {"fake_a": True, "fake_b": True}
+
+
+def test_default_state_comma_list_only_enables_named_slugs():
+    with _isolated_registry():
+        registry.register(_FakeTelescope)
+        registry.register(_FakeTelescopeB)
+        with patch.dict(os.environ, {"OBSERVATORY_ENABLED": "fake_a"}, clear=True):
+            assert registry._default_state() == {"fake_a": True, "fake_b": False}
+
+
+def test_unknown_registered_slug_inherits_the_default_not_silently_enabled():
+    """The documented subtlety in registry.state(): a slug with no entry in
+    the persisted file yet (a newly-added pack on an existing install) must
+    fall back to the env default, not come up enabled just for existing."""
+    with _isolated_registry():
+        registry.register(_FakeTelescope)
+        registry.register(_FakeTelescopeB)
+        registry._write_state({"fake_a": True})   # fake_b was never saved
+        with patch.dict(os.environ, {"OBSERVATORY_ENABLED": "hubble"}, clear=True):
+            assert registry.state() == {"fake_a": True, "fake_b": False}
+
+
+def test_set_enabled_persists_without_clobbering_other_slugs():
+    with _isolated_registry():
+        registry.register(_FakeTelescope)
+        registry.register(_FakeTelescopeB)
+        with patch.dict(os.environ, {"OBSERVATORY_ENABLED": "none"}, clear=True):
+            registry.set_enabled("fake_a", True)
+            registry.set_enabled("fake_b", True)
+            assert registry.is_enabled("fake_a") is True
+            registry.set_enabled("fake_a", False)
+            # Flipping fake_a back off must not disturb fake_b's own state.
+            assert registry.is_enabled("fake_a") is False
+            assert registry.is_enabled("fake_b") is True
+
+
+def test_set_enabled_unknown_slug_raises():
+    with _isolated_registry():
+        try:
+            registry.set_enabled("nope", True)
+            assert False, "expected KeyError"
+        except KeyError:
+            pass
+
+
+def test_get_unknown_slug_raises():
+    with _isolated_registry():
+        try:
+            registry.get("nope")
+            assert False, "expected KeyError"
+        except KeyError:
+            pass
+
+
+def test_get_memoizes_the_instance():
+    with _isolated_registry():
+        registry.register(_FakeTelescope)
+        assert registry.get("fake_a") is registry.get("fake_a")
+
+
+def test_enabled_slugs_returns_only_enabled_ones_sorted():
+    with _isolated_registry():
+        registry.register(_FakeTelescopeB)
+        registry.register(_FakeTelescope)
+        with patch.dict(os.environ, {"OBSERVATORY_ENABLED": "none"}, clear=True):
+            registry.set_enabled("fake_a", True)
+            assert registry.enabled_slugs() == ["fake_a"]
+
+
+def test_catalog_reports_static_metadata_and_enabled_flag_without_fetching():
+    with _isolated_registry():
+        registry.register(_FakeTelescope)
+        with patch.dict(os.environ, {"OBSERVATORY_ENABLED": "none"}, clear=True):
+            registry.set_enabled("fake_a", True)
+            entry = registry.catalog()[0]
+        assert entry["slug"] == "fake_a"
+        assert entry["name"] == "FAKE A"
+        assert entry["enabled"] is True

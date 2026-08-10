@@ -494,6 +494,32 @@ PHASES = [
                        "importing tweepy (an optional dependency that may not "
                        "even be installed), and dispatch_brief always reaches "
                        "stdout regardless of channel configuration"},
+            {"name": "Kernel test coverage for telescope/registry.py", "done": True,
+             "detail": "the last major untested kernel module — pure logic (an "
+                       "enable/disable toggle persisted to JSON) but built on "
+                       "module-global state (_classes, _instances, a file on "
+                       "disk), which is exactly why it had been skipped in favour "
+                       "of series.py/http.py/notifier.py the last three "
+                       "iterations: it needs real isolation, not just a mock. "
+                       "Re-checked the usual blocked sources live again first "
+                       "(SAM.gov 404, Semantic Scholar 429, SBIR 429) — still "
+                       "nothing newly actionable. Added a context manager that "
+                       "saves and fully restores _classes/_instances/"
+                       "_load_errors/STATE_FILE around each test against two "
+                       "throwaway fake telescope classes, so nothing here can "
+                       "leak into the real registry other tests or the app "
+                       "depend on (confirmed: the same pre-existing, unrelated "
+                       "OpenAlex live-test failure is the only failure, same as "
+                       "every prior iteration). 10 new tests, most pinning the "
+                       "one genuinely subtle property in this file: a slug "
+                       "registered but never yet saved to disk (a newly-added "
+                       "pack on an existing install) must inherit the env-var "
+                       "default rather than come up silently enabled just for "
+                       "existing — plus register(), both branches of the env-var "
+                       "default (all vs. a comma list), set_enabled() not "
+                       "clobbering a sibling slug's own persisted state, both "
+                       "KeyError paths, get()'s memoisation, and catalog()'s "
+                       "shape"},
         ],
     },
 ]
