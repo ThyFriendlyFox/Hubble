@@ -68,7 +68,7 @@ import time
 from urllib.parse import quote_plus, urlparse
 
 from telescope import Column, Signal, Telescope
-from telescope.events import ClimberRule, DeltaRule, NewEntrantRule, NewLeaderRule
+from telescope.events import ClimberRule, DeltaRule, NewEntrantRule, NewLeaderRule, money
 from telescope.http import get_json, get_text, probe_text, try_json
 from telescope.registry import register
 
@@ -112,14 +112,6 @@ def _num(v):
         return float(v)
     except (TypeError, ValueError):
         return None
-
-
-def _money(v):
-    v = v or 0
-    for unit, div in (("B", 1e9), ("M", 1e6), ("K", 1e3)):
-        if abs(v) >= div:
-            return f"${v / div:,.1f}{unit}"
-    return f"${v:,.0f}"
 
 
 def _is_fund(name, industry):
@@ -533,7 +525,7 @@ class Kepler(Telescope):
                 # goes missing and the row floats up on recency alone.
                 "raise_size": offering or sold,
                 "size_is_floor": bool(not offering and sold),
-                "raise_fmt": _money(offering or sold),
+                "raise_fmt": money(offering or sold),
                 "sold_pct": sold_pct,
                 "industry": industry or "—",
                 "state": d["state"] or "—",

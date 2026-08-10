@@ -23,7 +23,7 @@ import re
 import traceback
 
 from telescope import Column, Signal, Telescope
-from telescope.events import ClimberRule, DeltaRule, NewEntrantRule, NewLeaderRule
+from telescope.events import ClimberRule, DeltaRule, NewEntrantRule, NewLeaderRule, money
 from telescope.http import post_json, try_json
 from telescope.registry import get as get_telescope, is_enabled, register
 
@@ -84,14 +84,6 @@ def _norm_company(name):
     s = _PUNCT_RE.sub(" ", (name or "").lower())
     s = _SUFFIX_RE.sub(" ", s)
     return re.sub(r"\s+", " ", s).strip()
-
-
-def _money(v):
-    v = v or 0
-    for unit, div in (("B", 1e9), ("M", 1e6), ("K", 1e3)):
-        if abs(v) >= div:
-            return f"${v / div:,.1f}{unit}"
-    return f"${v:,.0f}"
 
 
 def _window(months_back_start, months_back_end):
@@ -203,13 +195,13 @@ class Jackson(Telescope):
         ),
         DeltaRule(
             field="obligations_12m", direction="up", frac=0.30,
-            type="big_award", min_abs=50e6, formatter=_money,
+            type="big_award", min_abs=50e6, formatter=money,
             headline="💥 {name} obligations jumped {pct}% — {old_fmt} → "
                      "{new_fmt} trailing 12m.",
         ),
         DeltaRule(
             field="obligations_12m", direction="down", frac=0.30,
-            type="funding_drop", min_abs=50e6, formatter=_money,
+            type="funding_drop", min_abs=50e6, formatter=money,
             headline="📉 {name} obligations fell {pct}% — {old_fmt} → {new_fmt} "
                      "trailing 12m.",
         ),

@@ -11,6 +11,17 @@ row plus any extras the rule computes, so domain packs stay declarative.
 from dataclasses import dataclass, field as dc_field
 
 
+def money(v):
+    """Format a dollar amount for a headline: 1_234_000 -> '$1.2M'. Shared
+    because three domain packs (Jackson, Kepler, Simons) each independently
+    needed the identical formatter for their DeltaRule headlines."""
+    v = v or 0
+    for unit, div in (("B", 1e9), ("M", 1e6), ("K", 1e3)):
+        if abs(v) >= div:
+            return f"${v / div:,.1f}{unit}"
+    return f"${v:,.0f}"
+
+
 def _fmt(template, row, extra):
     # A field that's None (present but unknown, not missing from the row —
     # e.g. hn_growth when there weren't enough stories to compute one) would
