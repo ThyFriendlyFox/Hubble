@@ -37,11 +37,13 @@ arXiv is a genuinely separate signal from OpenAlex, not folded into it:
 OpenAlex ingests arXiv preprints too, so summing the two counts would double
 count the same papers and present an inflated number as if it were clean —
 exactly the kind of confident-looking garbage this codebase tries to avoid.
-Kept apart, arXiv also buys real redundancy: OpenAlex's shared unauthenticated
-quota has been exhausted for this deployment for several sweeps running
-(self-inflicted from earlier testing volume, not a permanent block), which
-silently zeroed Holmdel's entire research signal and the crossing_over event
-built on it. arXiv's own query API turned out not to need the bulk OAI-PMH
+Kept apart, arXiv also buys real redundancy: OpenAlex runs on a small free
+daily USD budget (not just a request-rate limit) that resets at midnight
+UTC, and this deployment's own real sweep volume has kept it at $0
+remaining for extended stretches (self-inflicted from real usage, not a
+permanent block), which silently zeroed Holmdel's entire research signal
+and the crossing_over event built on it whenever that happened. arXiv's
+own query API turned out not to need the bulk OAI-PMH
 harvest originally assumed necessary for its documented ~1-req/3s etiquette —
 but it has a second, undocumented limit that etiquette alone doesn't clear: a
 short burst of requests raised no visible throttling, yet a full 32-topic
@@ -198,6 +200,11 @@ class Holmdel(Telescope):
               "already put on the list — it does not discover new topics yet. "
               "Research velocity is OpenAlex work counts on a quoted phrase "
               "match, not citations, so it shows volume, not influence. "
+              "OpenAlex's own free daily budget is small and resets at "
+              "midnight UTC — a real sweep's own request volume can exhaust "
+              "it outright, showing no research signal at all until the next "
+              "reset rather than a stale one, which is worth knowing before "
+              "reading too much into a quiet RESEARCH VELOCITY column. "
               "arXiv is a genuinely separate preprint-velocity signal, kept "
               "apart rather than summed with OpenAlex's — OpenAlex ingests "
               "arXiv too, so combining them would double count the same "

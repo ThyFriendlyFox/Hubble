@@ -1142,6 +1142,31 @@ PHASES = [
                        "fabricated historical claim, kept the original "
                        "recommendation alongside the real order for honest "
                        "comparison rather than silently overwriting it"},
+            {"name": "Holmdel's OpenAlex caveat states the current blind spot",
+             "done": True,
+             "detail": "the same honesty-gap class as the docs just fixed, "
+                       "but in the actual user-facing caveat text rendered "
+                       "on Holmdel's own board: it explained OpenAlex's "
+                       "methodology (quoted-phrase match, volume not "
+                       "influence) but said nothing about the fact that the "
+                       "signal has been completely dead — confirmed via a "
+                       "real collect() call, 0/32 topics with real "
+                       "paper_growth right now, the same result every single "
+                       "iteration this whole session — because OpenAlex's "
+                       "free daily USD budget keeps hitting $0 under this "
+                       "deployment's own real testing volume. A user reading "
+                       "the board has no way to know RESEARCH VELOCITY is "
+                       "currently non-functional rather than genuinely quiet "
+                       "this sweep, exactly the 'state blind spots honestly' "
+                       "convention applied to a real current gap rather than "
+                       "a hypothetical one. Added a plain-language note to "
+                       "the caveat, and updated the internal docstring "
+                       "comment from the older 'shared quota exhausted' "
+                       "framing to the more precise mechanism confirmed "
+                       "several iterations ago (a real USD budget, not just "
+                       "a request-rate limit, resetting at midnight UTC). "
+                       "Verified the updated caveat renders correctly via a "
+                       "real meta() call"},
         ],
     },
 ]
