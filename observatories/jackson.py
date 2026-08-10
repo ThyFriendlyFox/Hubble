@@ -455,14 +455,24 @@ class Jackson(Telescope):
         whose name or SEC industry code reads as defense/dual-use. It's a
         keyword heuristic, not a verified classification, and it disappears
         entirely if Kepler is turned off — see the caveat.
+
+        Reads store.latest() rather than collect(force=False): the latter
+        looks like it honours the "never forces a refresh" promise above
+        but doesn't — if Kepler's own cache has simply expired via its own
+        TTL, force=False still triggers a real, slow, paced live SEC sweep,
+        the exact silent multi-minute Jackson-page-load this docstring says
+        it avoids (the same bug once found in telescope/brief.py's build()).
+        store.latest() is a pure disk read of the snapshot from Kepler's
+        last real sweep, so it's genuinely incapable of forcing one.
         """
         if not is_enabled("kepler"):
             return None
         try:
-            rows = get_telescope("kepler").collect(force=False)
+            snapshot = get_telescope("kepler").store.latest()
         except Exception:
             traceback.print_exc()
             return None
+        rows = snapshot["rows"] if snapshot else []
 
         matches = [
             r for r in rows

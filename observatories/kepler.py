@@ -693,13 +693,22 @@ class Kepler(Telescope):
         already-cached rows only; never forces Holmdel to sweep, and
         disappears entirely if Holmdel is disabled — the same discipline
         Jackson's UNMAPPED panel already follows for its own Kepler read.
+
+        Reads store.latest() rather than collect(force=False) to actually
+        keep that promise: force=False still triggers a real, slow, paced
+        live fetch if Holmdel's own cache has simply expired via its own
+        TTL (Holmdel's arXiv/GitHub sources being the slowest in the whole
+        fleet), which is exactly the silent multi-minute Kepler-page-load
+        this docstring says it avoids. store.latest() is a pure disk read
+        of Holmdel's last real sweep, so it can't force one.
         """
         if not is_enabled("holmdel"):
             return {}
         try:
             holmdel = get_telescope("holmdel")
             events = holmdel.store.load_events(limit=200)
-            rows = holmdel.collect(force=False)
+            snapshot = holmdel.store.latest()
+            rows = snapshot["rows"] if snapshot else []
         except Exception:
             traceback.print_exc()
             return {}
