@@ -24,7 +24,7 @@ import traceback
 
 from telescope import Column, Signal, Telescope, ranking
 from telescope.events import ClimberRule, DeltaRule, NewEntrantRule, NewLeaderRule, money
-from telescope.http import post_json, try_json
+from telescope.http import SourceError, post_json, try_json
 from telescope.registry import get as get_telescope, is_enabled, register
 
 API = "https://api.usaspending.gov"
@@ -117,7 +117,15 @@ PSC_WEIGHTS = {"scale": 50, "momentum": 50}
 
 
 def _category(category, start, end, limit=100):
-    """spending_by_category, paged — the workhorse query."""
+    """spending_by_category, paged — the workhorse query.
+
+    A transient outage mid-page must not crash the whole sweep: unlike
+    every other fetcher in the fleet (built on try_json/try_text, which
+    degrade to a default), this and _award_counts() called post_json()
+    directly with no fallback at all, so a single USAspending hiccup would
+    propagate all the way up through collect() instead of just returning
+    whatever pages already succeeded.
+    """
     url = f"{API}/api/v2/search/spending_by_category/{category}/"
     filters = _filters(start, end)
     out, page = [], 1
@@ -127,7 +135,10 @@ def _category(category, start, end, limit=100):
             "limit": min(PAGE_MAX, limit - len(out)),
             "page": page,
         }
-        data = post_json(url, payload)
+        try:
+            data = post_json(url, payload)
+        except (SourceError, ValueError):
+            break
         results = data.get("results", [])
         out.extend(results)
         if not results or not data.get("page_metadata", {}).get("hasNext"):
@@ -225,8 +236,13 @@ class Jackson(Telescope):
 
     # ── sources ──────────────────────────────────────────────────────────
     def _recipients(self, cache_key, start, end, ttl, limit=100):
+        # DoD obligations to some recipient are never genuinely zero across a
+        # real 12-month window, so an empty result is unambiguously a fetch
+        # failure worth falling back to stale-but-real data for, not a
+        # legitimate reading to cache as the new truth.
         return self.cache.cached(
-            cache_key, ttl, lambda: _category("recipient", start, end, limit)
+            cache_key, ttl, lambda: _category("recipient", start, end, limit),
+            is_empty=lambda r: not r,
         )
 
     def _award_counts(self, start, end, ttl, pages=5):
@@ -245,7 +261,10 @@ class Jackson(Telescope):
                     "sort": "Award Amount", "order": "desc",
                     "limit": PAGE_MAX, "page": page, "subawards": False,
                 }
-                data = post_json(f"{API}/api/v2/search/spending_by_award/", payload)
+                try:
+                    data = post_json(f"{API}/api/v2/search/spending_by_award/", payload)
+                except (SourceError, ValueError):
+                    break
                 results = data.get("results", [])
                 for r in results:
                     k = _norm_company(r.get("Recipient Name"))
@@ -254,16 +273,21 @@ class Jackson(Telescope):
                 if not results or not data.get("page_metadata", {}).get("hasNext"):
                     break
             return counts
-        return self.cache.cached("award_counts", ttl, go)
+        # Same reasoning as _recipients(): the top defense primes always have
+        # some major awards in any 12-month window, so an empty result here
+        # is a fetch failure, not a legitimate reading.
+        return self.cache.cached("award_counts", ttl, go, is_empty=lambda r: not r)
 
     def _psc(self, start, end, ttl):
         return self.cache.cached(
-            "psc", ttl, lambda: _category("psc", start, end, 25)
+            "psc", ttl, lambda: _category("psc", start, end, 25),
+            is_empty=lambda r: not r,
         )
 
     def _psc_prior(self, start, end, ttl):
         return self.cache.cached(
-            "psc_prior", ttl, lambda: _category("psc", start, end, 60)
+            "psc_prior", ttl, lambda: _category("psc", start, end, 60),
+            is_empty=lambda r: not r,
         )
 
     def _sbir(self, ttl):

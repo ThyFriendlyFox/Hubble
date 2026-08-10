@@ -385,7 +385,13 @@ class Kepler(Telescope):
                     out.append(f)
                 time.sleep(SEC_DELAY)
             return out
-        return self.cache.cached("filings", ttl, go)
+        # _index_day() already swallows a single day's failure (weekends,
+        # holidays, an outage on that one day) by returning []. Every
+        # business day has real Form D activity, so only a total outage
+        # across the *entire* lookback window empties this out -- worth
+        # falling back to stale-but-real filings for, not caching as the
+        # new truth.
+        return self.cache.cached("filings", ttl, go, is_empty=lambda r: not r)
 
     def _detail(self, filing):
         """Offering economics from one filing's primary_doc.xml."""
@@ -499,7 +505,11 @@ class Kepler(Telescope):
                 }
                 time.sleep(0.15)
             return out
-        return self.cache.cached("hn", ttl, go)
+        # An entry is added for every name that clears the length filter and
+        # gets a successful response -- zero hits still gets one, only a
+        # raised exception skips it -- so an empty result means every
+        # attempted lookup failed, not that no issuer had HN attention.
+        return self.cache.cached("hn", ttl, go, is_empty=lambda r: not r)
 
     def _hiring(self, names, ttl):
         """Open-role count per issuer, tried against Greenhouse, then Lever,
