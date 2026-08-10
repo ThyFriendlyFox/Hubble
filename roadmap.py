@@ -181,8 +181,27 @@ PHASES = [
                        "defense filers are rare in any 12-day window. Needed a kernel "
                        "change: telescope.panels() so a telescope can return more than "
                        "one secondary board (Jackson now has two)"},
-            {"name": "Simons 13F whale tracking", "done": False,
-             "detail": "EDGAR 13F position deltas; 45-day lag stated on the row"},
+            {"name": "Simons 13F whale tracking", "done": True,
+             "detail": "new WHALE MOVES panel — quarter-over-quarter position deltas "
+                       "across a curated watchlist of 11 large filers (Berkshire, "
+                       "Renaissance, Citadel, and 8 more, CIKs confirmed live against "
+                       "EDGAR's company search, not from memory). Real complexity "
+                       "assessed with a research pass before committing to it: the "
+                       "informationTable XML filename is filer-chosen, not fixed "
+                       "like Form D's primary_doc.xml, so each filing needs its own "
+                       "index lookup first; a large filer can split one security "
+                       "across several manager rows (Berkshire's subsidiary "
+                       "'otherManager' breakdown, confirmed live, not hypothetical), "
+                       "so positions are summed by CUSIP within a filing before ever "
+                       "comparing quarters. 45-day filing lag stated plainly on the "
+                       "panel itself. Verified against real, current data: Berkshire "
+                       "trimming Apple and American Express while adding Alphabet "
+                       "and Occidental, Citadel cutting Tesla/Nvidia while adding "
+                       "Micron/SanDisk — all matching real, independently "
+                       "corroborated portfolio moves, not just internally consistent "
+                       "numbers. Lifted a `money()` formatter into telescope/events.py "
+                       "along the way: Jackson, Kepler and now Simons each had an "
+                       "identical private copy"},
             {"name": "Backfill history", "done": True,
              "detail": "new Telescope.historical_rows() hook: reconstructs a real "
                        "one-period-ago baseline from data a telescope already fetched "

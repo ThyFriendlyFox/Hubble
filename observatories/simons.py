@@ -16,15 +16,76 @@ Sources (all public, no keys):
                        oil — the macro backbone
   Yahoo Finance chart  equity/bond/commodity ETF closes
   CoinGecko            crypto
+  SEC EDGAR 13F-HR     quarter-over-quarter position deltas, curated funds
 
 Latency note: FRED daily series publish with a 1-2 business day lag, and the
 monthly series (CPI, unemployment) lag by weeks. Simons sees the recent past
 clearly; it is a positioning instrument, not a trading signal.
+
+── 13F whale tracking: what it actually shows ───────────────────────────────
+13F-HR filings are due 45 days after quarter end, so "recent" here means
+positioning from months ago, not now — Simons says so on the panel itself,
+not just in this docstring. The join key (CUSIP) matched cleanly across
+quarters in testing with no format drift, but a large filer's holdings are
+often split across several manager rows for the *same* security (Berkshire's
+`otherManager` subsidiary breakdown is a real example, found live) — summing
+by CUSIP within one filing avoids double-counting before ever comparing
+quarters. The informationTable XML filename is chosen by the filer, not fixed
+like Form D's primary_doc.xml, so each filing needs its own index lookup
+first. This is a curated watchlist of large, well-known filers, not the full
+universe of 13F filers (thousands) — the same tradeoff Holmdel makes with its
+topic list, for the same reason: a hand-picked universe you can actually
+reason about beats a firehose you can't.
 """
+import re
+import time
+
 from telescope import Column, Signal, Telescope
-from telescope.events import ClimberRule, NewLeaderRule, ThresholdRule
+from telescope.events import ClimberRule, NewLeaderRule, ThresholdRule, money
+from telescope.http import try_json, try_text
 from telescope.registry import register
 from telescope.series import Series, change, fetch_panel
+
+SEC_UA = {"User-Agent": "Observatory-Telescope/1.0 (thyfriendlyfox@gmail.com)"}
+SEC_DELAY = 0.15           # SEC asks for <=10 req/s; stay comfortably under
+ACCESSIONS_TTL = 6 * 3600  # how often to check for a newly-filed quarter
+# A specific accession's informationTable never changes once filed — cache it
+# for a long time regardless of the telescope's own force-refresh, so a
+# manual refresh doesn't re-download a multi-MB historical filing that can't
+# have changed.
+POSITION_CACHE_TTL = 90 * 86400
+WHALE_MIN_CHANGE = 10_000_000   # ignore position deltas under $10M as noise
+WHALE_TOP_N = 20                # rows shown on the panel
+
+# A curated watchlist of large, well-known 13F filers — CIKs confirmed live
+# against SEC EDGAR's company search, not from memory.
+WHALES = (
+    ("Berkshire Hathaway", "0001067983"),
+    ("Renaissance Technologies", "0001037389"),
+    ("Citadel Advisors", "0001423053"),
+    ("Bridgewater Associates", "0001350694"),
+    ("Two Sigma Investments", "0001179392"),
+    ("Millennium Management", "0001273087"),
+    ("Point72 Asset Management", "0001603466"),
+    ("Tiger Global Management", "0001167483"),
+    ("ARK Investment Management", "0001697748"),
+    ("Soros Fund Management", "0001029160"),
+    ("Viking Global Investors", "0001103804"),
+)
+
+_INFO_TABLE_RE = re.compile(r"<infoTable>(.*?)</infoTable>", re.S | re.I)
+
+
+def _tag(block, name):
+    m = re.search(rf"<{name}>(.*?)</{name}>", block, re.S | re.I)
+    return m.group(1).strip() if m else None
+
+
+def _num(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
 
 
 # The instrument panel. Deliberately broad but small enough to read at a glance.
@@ -69,10 +130,14 @@ class Simons(Telescope):
     glyph = "💰"
     tagline = "MARKET ATTENTION INDEX"
     entity_label = "INDICATORS"
-    sources_label = "FRED · YAHOO · COINGECKO"
+    sources_label = "FRED · YAHOO · COINGECKO · SEC 13F-HR"
     caveat = ("Ranks by abnormality, not by opinion — a high score means the "
               "gauge is far from its own normal, not that it's bullish. Daily "
-              "series lag 1-2 business days; monthly series lag weeks.")
+              "series lag 1-2 business days; monthly series lag weeks. The "
+              "WHALE MOVES panel is a curated watchlist of ~10 large filers, "
+              "not the full universe of 13F filers, and 13F-HR is due 45 "
+              "days after quarter end — it shows positioning from months "
+              "ago, not now.")
 
     cache_ttl = 3600
     poll_seconds = 12 * 3600
@@ -135,6 +200,17 @@ class Simons(Telescope):
 
     # ── secondary panel: the shape of the curve right now ────────────────
     def context(self, force=False):
+        panels = []
+        curve = self._curve_panel(force)
+        if curve:
+            panels.append(curve)
+        whales = self._whale_panel(force)
+        if whales:
+            panels.append(whales)
+        return panels or None
+
+    # ── secondary panel: the shape of the curve right now ────────────────
+    def _curve_panel(self, force=False):
         ttl = self.ttl(force)
         tenors = [
             ("dff", "Fed Funds"), ("dgs2", "2 Year"), ("dgs10", "10 Year"),
@@ -164,6 +240,154 @@ class Simons(Telescope):
                 {"field": "level", "label": "LEVEL", "fmt": "num"},
                 {"field": "chg_1m", "label": "1M (BP)", "fmt": "signed"},
                 {"field": "chg_12m", "label": "12M (BP)", "fmt": "signed"},
+            ],
+            "rows": rows,
+        }
+
+    # ── secondary panel: 13F position deltas across a curated whale list ──
+    def _accessions(self, cik, ttl):
+        """The two most recent 13F-HR (accession, report_date) pairs for one
+        filer, via SEC's structured submissions JSON — much cleaner than
+        parsing the legacy atom feed."""
+        def go():
+            data = try_json(
+                f"https://data.sec.gov/submissions/CIK{cik}.json",
+                default=None, headers=SEC_UA,
+            )
+            if not data:
+                return []
+            recent = data.get("filings", {}).get("recent", {})
+            out = []
+            for f, a, d in zip(
+                recent.get("form", []), recent.get("accessionNumber", []),
+                recent.get("reportDate", []),
+            ):
+                if f == "13F-HR":
+                    out.append({"accession": a, "report_date": d})
+                if len(out) >= 2:
+                    break
+            return out
+        return self.cache.cached(f"13f_accn_{cik}", ttl, go)
+
+    def _info_table_url(self, cik, accession):
+        """The informationTable XML's filename is filer-chosen, not fixed
+        like Form D's primary_doc.xml — ask the filing's own index for it."""
+        acc_nodash = accession.replace("-", "")
+        idx = try_json(
+            f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/"
+            f"{acc_nodash}/index.json",
+            default=None, headers=SEC_UA,
+        )
+        if not idx:
+            return None
+        for item in idx.get("directory", {}).get("item", []):
+            name = item.get("name", "")
+            if name.endswith(".xml") and name != "primary_doc.xml":
+                return (f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/"
+                        f"{acc_nodash}/{name}")
+        return None
+
+    def _positions(self, url):
+        """CUSIP -> {name, value}, summed across rows.
+
+        A filer can split one security across several manager rows —
+        Berkshire's subsidiary managers via `otherManager` is a real,
+        confirmed example, not a hypothetical — so this sums by CUSIP
+        within one filing before any quarter-over-quarter comparison
+        happens, or the same position would be double-counted.
+        """
+        xml = try_text(url, default=None, headers=SEC_UA)
+        if not xml:
+            return {}
+        out = {}
+        for block in _INFO_TABLE_RE.findall(xml):
+            cusip = _tag(block, "cusip")
+            if not cusip:
+                continue
+            value = _num(_tag(block, "value")) or 0.0
+            name = _tag(block, "nameOfIssuer") or cusip
+            slot = out.setdefault(cusip, {"name": name, "value": 0.0})
+            slot["value"] += value
+        return out
+
+    def _whale_moves(self, force):
+        """Top position deltas across the curated watchlist, biggest first."""
+        ttl = self.ttl(force)
+        moves, as_of = [], None
+        for name, cik in WHALES:
+            accns = self._accessions(cik, ttl)
+            if len(accns) < 2:
+                continue
+            recent_acc, prior_acc = accns[0], accns[1]
+            as_of = as_of or recent_acc["report_date"]
+            recent_url = self._info_table_url(cik, recent_acc["accession"])
+            time.sleep(SEC_DELAY)
+            prior_url = self._info_table_url(cik, prior_acc["accession"])
+            time.sleep(SEC_DELAY)
+            if not recent_url or not prior_url:
+                continue
+            # Keyed on the accession itself, not force: a specific filing's
+            # positions can never change once filed, so a manual refresh
+            # shouldn't re-download a multi-MB historical document.
+            recent_pos = self.cache.cached(
+                f"13f_pos_{cik}_{recent_acc['accession']}",
+                POSITION_CACHE_TTL, lambda u=recent_url: self._positions(u),
+            )
+            time.sleep(SEC_DELAY)
+            prior_pos = self.cache.cached(
+                f"13f_pos_{cik}_{prior_acc['accession']}",
+                POSITION_CACHE_TTL, lambda u=prior_url: self._positions(u),
+            )
+            time.sleep(SEC_DELAY)
+            for cusip in set(recent_pos) | set(prior_pos):
+                r = recent_pos.get(cusip, {"name": None, "value": 0.0})
+                p = prior_pos.get(cusip, {"name": None, "value": 0.0})
+                delta = r["value"] - p["value"]
+                if abs(delta) < WHALE_MIN_CHANGE:
+                    continue
+                direction = (
+                    "NEW" if p["value"] == 0 else
+                    "EXITED" if r["value"] == 0 else
+                    "INCREASED" if delta > 0 else "DECREASED"
+                )
+                moves.append({
+                    "fund": name,
+                    "security": r["name"] or p["name"] or cusip,
+                    "prior_value": p["value"],
+                    "recent_value": r["value"],
+                    "change": delta,
+                    "direction": direction,
+                })
+        moves.sort(key=lambda m: abs(m["change"]), reverse=True)
+        return moves[:WHALE_TOP_N], as_of
+
+    def _whale_panel(self, force=False):
+        moves, as_of = self._whale_moves(force)
+        if not moves:
+            return None
+        rows = [{
+            "fund": m["fund"],
+            "security": m["security"],
+            "prior_value": m["prior_value"],
+            "recent_value": m["recent_value"],
+            "change_fmt": money(m["change"]),
+            "direction": m["direction"],
+        } for m in moves]
+        return {
+            "title": "WHALE MOVES · 13F POSITION CHANGES",
+            "subtitle": (
+                f"Quarter-over-quarter deltas across {len(WHALES)} curated "
+                f"large filers, as of {as_of or 'unknown'} — 13F-HR is due "
+                "45 days after quarter end, so this is positioning from "
+                "months ago, not now"
+            ),
+            "columns": [
+                {"field": "fund", "label": "FUND", "fmt": "text"},
+                {"field": "security", "label": "SECURITY", "fmt": "text"},
+                {"field": "prior_value", "label": "PRIOR VALUE", "fmt": "money"},
+                {"field": "recent_value", "label": "NEW VALUE", "fmt": "money"},
+                {"field": "change_fmt", "label": "CHANGE", "fmt": "text"},
+                {"field": "direction", "label": "MOVE", "fmt": "text"},
             ],
             "rows": rows,
         }
