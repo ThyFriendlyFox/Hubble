@@ -182,6 +182,16 @@ def _poller():
     Respects per-telescope cadence — Hubble every 6h, Jackson daily — and
     re-reads the toggle state each pass so flipping a switch takes effect
     without a restart.
+
+    `last[slug]` only advances on a *successful* sweep. safe_sweep() can't
+    tell the poller "I failed" through its return value alone — an empty
+    events list means "swept fine, nothing changed" just as often as it
+    means "the fetch blew up" — so this checks _last_error instead. Getting
+    this wrong bites hardest on exactly the telescopes the recent cache-
+    resilience work targeted: a transient failure on a 24h-cadence
+    telescope like Jackson would otherwise not retry for a full day, since
+    advancing `last[slug]` unconditionally treated a crash the same as a
+    real sweep.
     """
     last = {}
     while True:
@@ -194,8 +204,12 @@ def _poller():
             if time.time() < due:
                 continue
             events = scope.safe_sweep(notifier)
-            last[slug] = time.time()
-            print(f"[observatory] {slug} sweep · {len(events)} new event(s)")
+            if scope._last_error is None:
+                last[slug] = time.time()
+                print(f"[observatory] {slug} sweep · {len(events)} new event(s)")
+            else:
+                print(f"[observatory] {slug} sweep failed ({scope._last_error}) "
+                      "— retrying next tick")
         time.sleep(60)
 
 

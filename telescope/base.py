@@ -175,9 +175,20 @@ class Telescope:
         self.store.seed(seeded, time.time() - self.poll_seconds)
 
     def safe_sweep(self, notifier=None):
-        """sweep() that records the failure instead of propagating it."""
+        """sweep() that records the failure instead of propagating it.
+
+        Clears _last_error on success, not just sets it on failure — without
+        that, a telescope that failed once and then recovered would keep
+        reporting the stale error via meta() forever, since nothing else on
+        this path ever resets it. The poller relies on the same signal to
+        decide whether this sweep actually happened, so an unrelated success
+        must not be allowed to look like a failure just because a stale
+        _last_error from long ago was never cleared.
+        """
         try:
-            return self.sweep(notifier)
+            events = self.sweep(notifier)
+            self._last_error = None
+            return events
         except Exception as e:
             self._last_error = str(e)
             traceback.print_exc()

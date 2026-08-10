@@ -614,6 +614,35 @@ PHASES = [
                        "simulated a total outage on each exact cache key and "
                        "confirmed the real data survives instead of being "
                        "overwritten"},
+            {"name": "Poller retries a failed sweep on the next tick, not next cycle",
+             "done": True,
+             "detail": "found while thinking through what the last two "
+                       "iterations' cache-resilience fixes actually protect "
+                       "against: even with is_empty guarding every cache write, "
+                       "a genuine fetch failure still needs a *retry*, and "
+                       "app.py's poller was treating a failed sweep exactly "
+                       "like a successful one for scheduling purposes — "
+                       "safe_sweep() returning [] on either an exception or a "
+                       "real 'nothing changed' sweep, with the poller "
+                       "unconditionally advancing last[slug] either way. A "
+                       "transient failure on a 24h-cadence telescope like "
+                       "Jackson would silently not retry for a full day. "
+                       "Two-part fix: safe_sweep() now clears _last_error on a "
+                       "successful attempt (it previously only ever set it on "
+                       "failure, so a telescope that recovered would keep "
+                       "reporting a stale error via meta() forever — nothing "
+                       "else on that path ever reset it); the poller now only "
+                       "advances last[slug] when _last_error is None after the "
+                       "call, so a real failure retries on the very next 60s "
+                       "tick instead of waiting a full poll_seconds. Verified "
+                       "against a real, live-registered Jackson instance, not "
+                       "synthetic: a genuine successful sweep advances the "
+                       "schedule, injecting a real exception into collect() "
+                       "leaves it unadvanced with the actual error message "
+                       "recorded, and restoring the real collect() and "
+                       "sweeping again both clears the error and resumes "
+                       "advancing. Added 2 kernel tests pinning safe_sweep()'s "
+                       "error-tracking directly"},
         ],
     },
 ]

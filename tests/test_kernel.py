@@ -337,6 +337,57 @@ def test_backfill_never_overwrites_real_history():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ── safe_sweep() error tracking ──────────────────────────────────────────
+def test_safe_sweep_sets_last_error_on_failure_without_crashing():
+    class Scope(Telescope):
+        slug = "test_safe_sweep_fail_ns"
+        signals = (Signal("v", "value", "VALUE"),)
+        default_weights = {"v": 100}
+        snapshot_fields = ("value",)
+
+        def collect(self, force=False):
+            raise RuntimeError("source is down")
+
+    scope, tmp = _isolated_scope(Scope)
+    try:
+        assert scope._last_error is None
+        events = scope.safe_sweep()
+        assert events == []
+        assert scope._last_error == "source is down"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_safe_sweep_clears_a_stale_last_error_on_recovery():
+    """A telescope that failed once and then recovered must not keep
+    reporting the old error forever -- the poller relies on _last_error
+    being accurate for *this* attempt, not some earlier one, to decide
+    whether to advance its own retry schedule."""
+    calls = {"n": 0}
+
+    class Scope(Telescope):
+        slug = "test_safe_sweep_recover_ns"
+        signals = (Signal("v", "value", "VALUE"),)
+        default_weights = {"v": 100}
+        snapshot_fields = ("value",)
+
+        def collect(self, force=False):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("transient outage")
+            return [{"key": "a", "name": "A", "value": 10,
+                     "noise": False, "sources": ["x"], "link": ""}]
+
+    scope, tmp = _isolated_scope(Scope)
+    try:
+        scope.safe_sweep()
+        assert scope._last_error == "transient outage"
+        scope.safe_sweep()
+        assert scope._last_error is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_crossover_rule_reads_leading_from_prev_and_lagging_from_curr():
     """Holmdel's 'research -> builders' shape: unlike every other rule, the
     two fields it compares live at two different points in time."""
