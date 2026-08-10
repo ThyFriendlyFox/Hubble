@@ -72,7 +72,7 @@ def score(rows, signals, default_weights, weights=None,
     quality = set(quality_signals)
     for i, r in enumerate(rows):
         total, wsum = 0.0, 0.0
-        contrib = {}
+        contrib = {}   # key -> normalised value, kept until wsum is known
         has_quality = not quality  # no quality set configured -> never dampen
         for key, w in weights.items():
             if w <= 0 or key not in by_key:
@@ -84,12 +84,28 @@ def score(rows, signals, default_weights, weights=None,
                 has_quality = True
             total += v * w
             wsum += w
-            contrib[key] = round(v, 1)
+            contrib[key] = v
         s_val = total / wsum if wsum else None
-        if s_val is not None and not has_quality:
+        dampened = s_val is not None and not has_quality
+        if dampened:
             s_val *= dampen
         r["score"] = round(s_val, 1) if s_val is not None else None
-        r["score_breakdown"] = contrib
+        r["dampened"] = dampened
+        # Per-signal breakdown: exactly what produced the score, for a tooltip
+        # or any other "show your work" surface. `points` are this signal's
+        # share of the (pre-dampen) blended average — they sum to the score
+        # before dampening is applied.
+        r["score_breakdown"] = {
+            key: {
+                "label": by_key[key].label,
+                "field": by_key[key].field,
+                "raw": r.get(by_key[key].field),
+                "normalized": round(v, 1),
+                "weight": weights[key],
+                "points": round(v * weights[key] / wsum, 1) if wsum else 0.0,
+            }
+            for key, v in contrib.items()
+        }
 
     ranked = sorted(
         rows, key=lambda r: (r["score"] is not None, r["score"] or 0), reverse=True

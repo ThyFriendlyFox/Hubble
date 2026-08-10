@@ -405,3 +405,40 @@ tbody tr.top1 td .up, tbody tr.top1 td .down { color: #000; }
   .scope-strip { padding: 0 16px; }
   .scope-card { border-right: 0; }
 }
+
+/* ── score calculation tooltip ─────────────── */
+.scorecell, .pod-score { cursor: help; }
+.calc-tip {
+  position: fixed; z-index: 100; pointer-events: none;
+  width: 300px; background: #131316; border: 1px solid var(--line-2);
+  box-shadow: 4px 4px 0 rgba(0,0,0,.5);
+  padding: 12px 14px 10px; font-size: 11px; line-height: 1.5;
+  opacity: 0; transform: translateY(4px); transition: opacity .1s ease, transform .1s ease;
+}
+.calc-tip.show { opacity: 1; transform: none; }
+.calc-tip .ct-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line);
+}
+.calc-tip .ct-name { font-weight: 600; color: var(--ink); font-size: 12px; }
+.calc-tip .ct-score { font-family: "Anton", sans-serif; font-size: 20px; color: var(--ink); }
+.calc-tip .ct-score span { font-size: 10px; color: var(--ink-faint); font-family: "IBM Plex Mono", monospace; }
+.calc-tip .ct-row {
+  display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px;
+  align-items: baseline; padding: 3px 0; color: var(--ink-dim);
+}
+.calc-tip .ct-row .ct-label { color: var(--ink); letter-spacing: .5px; }
+.calc-tip .ct-row .ct-raw { color: var(--ink-faint); text-align: right; }
+.calc-tip .ct-row .ct-weight { color: var(--ink-faint); text-align: right; }
+.calc-tip .ct-row .ct-pts { color: var(--ink); text-align: right; font-weight: 600; min-width: 34px; }
+.calc-tip .ct-colheads {
+  display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px;
+  font-size: 8.5px; letter-spacing: 1px; color: var(--ink-faint); margin-bottom: 2px;
+}
+.calc-tip .ct-colheads span { text-align: right; }
+.calc-tip .ct-colheads span:first-child { text-align: left; }
+.calc-tip .ct-formula {
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line);
+  color: var(--ink-faint); font-size: 9.5px; letter-spacing: .3px; line-height: 1.6;
+}
+.calc-tip .ct-dampen { color: var(--ink); }

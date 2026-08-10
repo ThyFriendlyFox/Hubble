@@ -159,6 +159,8 @@ class Telescope:
                 {"key": s.key, "label": s.label} for s in self.signals
             ],
             "default_weights": self.default_weights,
+            "quality_signals": list(self.quality_signals),
+            "dampen": self.dampen,
             "poll_seconds": self.poll_seconds,
             "snapshots": self.store.count(),
             "last_error": self._last_error,

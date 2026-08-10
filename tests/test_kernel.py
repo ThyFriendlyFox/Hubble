@@ -84,6 +84,31 @@ def test_no_quality_config_means_no_dampening():
     assert rows[0]["score"] == 0.0   # single value normalises to 0, undampened
 
 
+def test_score_breakdown_shows_the_work():
+    """The breakdown must carry everything a tooltip needs to explain a score:
+    the label, the raw field value, the normalised 0-100 value, the weight
+    actually used, and this signal's point contribution to the blend."""
+    rows = [{"key": "x", "a": 10, "b": 0}, {"key": "y", "a": 0, "b": 10}]
+    ranking.score(rows, SIGNALS, {"a": 50, "b": 50})
+    b = rows[0]["score_breakdown"]["a"]
+    assert b["label"] == "A" and b["field"] == "a" and b["raw"] == 10
+    assert b["normalized"] == 100.0 and b["weight"] == 50
+    # Only 'a' contributes for this row (a=100 normalised, b=0 normalised),
+    # so its points equal the row's own score.
+    assert b["points"] == rows[0]["score"]
+
+
+def test_dampened_flag_matches_quality_gate():
+    rows = [
+        {"key": "has", "a": 10, "b": 10},
+        {"key": "lacks", "b": 5},
+    ]
+    ranking.score(rows, SIGNALS, {"a": 50, "b": 50}, quality_signals=("a",), dampen=0.5)
+    by = {r["key"]: r for r in rows}
+    assert by["has"]["dampened"] is False
+    assert by["lacks"]["dampened"] is True
+
+
 def test_zero_weight_signal_is_skipped():
     rows = [{"key": "x", "a": 1, "b": 1}, {"key": "y", "a": 10, "b": 1}]
     ranking.score(rows, SIGNALS, {"a": 0, "b": 100})

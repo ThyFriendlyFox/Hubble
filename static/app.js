@@ -73,6 +73,91 @@ function ago(s) {
   return Math.round(s / 86400) + "d";
 }
 
+/* ── score calculation tooltip ─────────────── */
+const tip = document.getElementById("calc-tip");
+let tipKey = null;
+
+function fmtRaw(field, value) {
+  const col = state.meta && state.meta.columns.find((c) => c.field === field);
+  return (FORMATTERS[(col && col.fmt) || "num"] || fmtNum)(value);
+}
+
+function rowByKey(key) {
+  return state.rows.find((r) => String(r.key) === key);
+}
+
+function buildTip(row) {
+  const breakdown = row.score_breakdown || {};
+  const entries = Object.values(breakdown).sort((a, b) => b.points - a.points);
+  const rowsHtml = entries
+    .map(
+      (b) => `<div class="ct-row">
+        <span class="ct-label">${b.label}</span>
+        <span class="ct-raw">${fmtRaw(b.field, b.raw)}</span>
+        <span class="ct-weight">×${b.weight}</span>
+        <span class="ct-pts">${b.points.toFixed(1)}</span>
+      </div>`
+    )
+    .join("");
+  let dampenNote = "";
+  if (row.dampened) {
+    const meta = state.meta || {};
+    const qualityLabels = (meta.signals || [])
+      .filter((s) => (meta.quality_signals || []).includes(s.key))
+      .map((s) => s.label);
+    dampenNote = `<div class="ct-formula"><span class="ct-dampen">⚠ ×${meta.dampen}</span> — no independent evidence present (needs one of: ${qualityLabels.join(", ") || "a quality signal"}).</div>`;
+  }
+  return `
+    <div class="ct-head">
+      <span class="ct-name">${row.name || ""}</span>
+      <span class="ct-score">${row.score ?? "—"}<span>/100</span></span>
+    </div>
+    <div class="ct-colheads"><span>SIGNAL</span><span>RAW</span><span>WEIGHT</span><span>PTS</span></div>
+    ${rowsHtml || '<div class="ct-row"><span class="ct-label dim">no scored signals</span></div>'}
+    <div class="ct-formula">SCORE = Σ(NORMALISED × WEIGHT) ÷ Σ(WEIGHT)${row.dampened ? " × DAMPEN" : ""}</div>
+    ${dampenNote}`;
+}
+
+function positionTip(x, y) {
+  const pad = 16;
+  const w = tip.offsetWidth || 300;
+  const h = tip.offsetHeight || 120;
+  let left = x + pad;
+  let top = y + pad;
+  if (left + w > window.innerWidth - 8) left = x - w - pad;
+  if (top + h > window.innerHeight - 8) top = y - h - pad;
+  tip.style.left = Math.max(8, left) + "px";
+  tip.style.top = Math.max(8, top) + "px";
+}
+
+function hideTip() {
+  tipKey = null;
+  tip.classList.remove("show");
+  tip.hidden = true;
+}
+
+function wireTipDelegation(container) {
+  container.addEventListener("mousemove", (e) => {
+    const el = e.target.closest("[data-key]");
+    if (!el) {
+      if (tipKey !== null) hideTip();
+      return;
+    }
+    if (el.dataset.key !== tipKey) {
+      const row = rowByKey(el.dataset.key);
+      if (!row || !row.score_breakdown) { hideTip(); return; }
+      tipKey = el.dataset.key;
+      tip.innerHTML = buildTip(row);
+      tip.hidden = false;
+      requestAnimationFrame(() => tip.classList.add("show"));
+    }
+    positionTip(e.clientX, e.clientY);
+  });
+  container.addEventListener("mouseleave", hideTip);
+}
+wireTipDelegation($("#rows"));
+wireTipDelegation($("#podium"));
+
 /* ── observatory catalog + switcher ─────────── */
 async function loadCatalog() {
   const r = await fetch("/api/observatory");
@@ -290,7 +375,7 @@ function podium(rows) {
         : r.name;
       return `<div class="pod rank-${i + 1}">
         <div class="pod-place">${place[i]}</div>
-        <div class="pod-score">${r.score}<span class="pod-score-x">/100</span></div>
+        <div class="pod-score" data-key="${r.key}">${r.score}<span class="pod-score-x">/100</span></div>
         <div class="pod-meter"><i style="width:${pct}%"></i></div>
         <div class="pod-name">${name}</div>
         <div class="pod-stats">${stats || "—"}</div>
@@ -322,7 +407,7 @@ function render() {
           }
           if (c.field === "score") {
             const pct = r.score ? (r.score / maxScore) * 100 : 0;
-            return `<td class="scorecell scorebar">${r.score ?? "—"}<i style="width:${pct}%"></i></td>`;
+            return `<td class="scorecell scorebar" data-key="${r.key}">${r.score ?? "—"}<i style="width:${pct}%"></i></td>`;
           }
           return `<td class="${c.fmt === "text" ? "left" : ""}">${cell(r, c)}</td>`;
         })
