@@ -113,8 +113,10 @@ PHASES = [
              "detail": "EDGAR 13F position deltas; 45-day lag stated on the row"},
             {"name": "Backfill history", "done": False,
              "detail": "seed snapshots from historical data so events fire on day one"},
-            {"name": "Per-signal explanations", "done": False,
-             "detail": "click a score to see exactly which signals produced it"},
+            {"name": "Per-signal explanations", "done": True,
+             "detail": "hover a score to see raw value, normalised value, weight "
+                       "and point contribution per signal, plus why a row was "
+                       "dampened if it was — generic across all six telescopes"},
         ],
     },
     {

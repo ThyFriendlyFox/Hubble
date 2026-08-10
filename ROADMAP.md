@@ -44,7 +44,7 @@ _Generated from `roadmap.py`, which also backs the dashboard's ROADMAP tab._
 - [ ] **Topic auto-discovery** — graduate from curated watchlist to embedding-cluster resolution
 - [ ] **Semantic Scholar key** — still blocked without one — its unauthenticated quota is a small pool shared globally by every unkeyed caller, confirmed not a proxy artifact by retrying locally with backoff
 
-## PHASE 3 · MAKING THE SIGNAL SHARPER  ·  `next`  (0/7)
+## PHASE 3 · MAKING THE SIGNAL SHARPER  ·  `next`  (1/7)
 
 > Everything here improves telescopes that already exist.
 
@@ -54,7 +54,7 @@ _Generated from `roadmap.py`, which also backs the dashboard's ROADMAP tab._
 - [ ] **Jackson tech-area board** — promote the PSC panel into a rankable second board
 - [ ] **Simons 13F whale tracking** — EDGAR 13F position deltas; 45-day lag stated on the row
 - [ ] **Backfill history** — seed snapshots from historical data so events fire on day one
-- [ ] **Per-signal explanations** — click a score to see exactly which signals produced it
+- [x] **Per-signal explanations** — hover a score to see raw value, normalised value, weight and point contribution per signal, plus why a row was dampened if it was — generic across all six telescopes
 
 ## PHASE 4 · THE OBSERVATORY LAYER  ·  `later`  (0/6)
 
