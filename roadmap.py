@@ -672,6 +672,31 @@ PHASES = [
                        "both confirmed the real cached data survives instead "
                        "of being overwritten. This closes out the "
                        "cache-resilience audit across all six telescopes"},
+            {"name": "Cache resilience for Simons' WHALE MOVES panel", "done": True,
+             "detail": "the prior iteration's 'closes out the audit across all "
+                       "six telescopes' claim was premature — it covered "
+                       "Simons' primary series via telescope/series.py's "
+                       "fetch_panel(), but not the separate WHALE MOVES "
+                       "secondary panel's own 13F fetchers (_accessions(), "
+                       "_positions()), a genuinely different code path. Found "
+                       "the highest-confidence case in this whole audit: "
+                       "_positions()' cache (one specific filing's holdings) "
+                       "uses a 90-day TTL specifically *because* a filing's "
+                       "content is immutable once filed — but that same "
+                       "permanence meant a transient SEC outage returning {} "
+                       "would poison that one filing's cache for the full 90 "
+                       "days, not just until the next sweep, silently blanking "
+                       "a whale's WHALE MOVES entry for a whole quarter. A real "
+                       "13F-HR from a manager large enough to be on the "
+                       "curated WHALES list always reports some positions, so "
+                       "empty is unambiguous. Same reasoning for _accessions(): "
+                       "every curated whale always has at least two historical "
+                       "13F-HR filings. Verified against real, current data: "
+                       "today's cached accessions and a real filing's 29 "
+                       "positions for the first whale on the list both pass "
+                       "the predicates untouched, and simulating a total "
+                       "outage on both confirmed the real data survives "
+                       "instead of being overwritten"},
         ],
     },
 ]

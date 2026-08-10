@@ -270,7 +270,10 @@ class Simons(Telescope):
                 if len(out) >= 2:
                     break
             return out
-        return self.cache.cached(f"13f_accn_{cik}", ttl, go)
+        # WHALES is a curated list of large, active managers -- each always
+        # has at least two historical 13F-HR filings, so an empty result is
+        # a fetch failure, not a legitimate reading.
+        return self.cache.cached(f"13f_accn_{cik}", ttl, go, is_empty=lambda r: not r)
 
     def _info_table_url(self, cik, accession):
         """The informationTable XML's filename is filer-chosen, not fixed
@@ -331,15 +334,22 @@ class Simons(Telescope):
                 continue
             # Keyed on the accession itself, not force: a specific filing's
             # positions can never change once filed, so a manual refresh
-            # shouldn't re-download a multi-MB historical document.
+            # shouldn't re-download a multi-MB historical document. That
+            # same permanence is why is_empty matters more here than almost
+            # anywhere else in the fleet: a real 13F-HR from a manager this
+            # large always reports some positions, so a transient SEC outage
+            # returning {} would otherwise poison this specific filing's
+            # cache for the full 90-day TTL, not just until the next sweep.
             recent_pos = self.cache.cached(
                 f"13f_pos_{cik}_{recent_acc['accession']}",
                 POSITION_CACHE_TTL, lambda u=recent_url: self._positions(u),
+                is_empty=lambda r: not r,
             )
             time.sleep(SEC_DELAY)
             prior_pos = self.cache.cached(
                 f"13f_pos_{cik}_{prior_acc['accession']}",
                 POSITION_CACHE_TTL, lambda u=prior_url: self._positions(u),
+                is_empty=lambda r: not r,
             )
             time.sleep(SEC_DELAY)
             for cusip in set(recent_pos) | set(prior_pos):
