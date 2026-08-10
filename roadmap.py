@@ -697,6 +697,30 @@ PHASES = [
                        "the predicates untouched, and simulating a total "
                        "outage on both confirmed the real data survives "
                        "instead of being overwritten"},
+            {"name": "Brief scheduler retries a failed build on the next tick",
+             "done": True,
+             "detail": "the exact same bug the poller had, in the other "
+                       "background thread in app.py: _brief_scheduler() "
+                       "advanced its own retry clock (`last = time.time()`) "
+                       "unconditionally after its try/except, so a single "
+                       "failed digest build or dispatch (any telescope's "
+                       "cached board being briefly unreadable, a notifier "
+                       "hiccup) would silently not retry for a full "
+                       "BRIEF_HOURS — 24h by default — instead of the very "
+                       "next 60s tick. Found by checking whether the poller "
+                       "fix from two iterations ago had a sibling anywhere "
+                       "else in app.py, rather than assume it was the only "
+                       "background loop with this shape. Same fix: only "
+                       "advance `last` inside the try block, after a genuine "
+                       "success, not unconditionally after it. Verified "
+                       "against real, current data rather than synthetic: ran "
+                       "the exact fixed decision logic against the real "
+                       "telescope.brief.build()/notifier.dispatch_brief() path "
+                       "twice — once for real (produced and logged a genuine "
+                       "digest, including a real live Hubble climber event) "
+                       "confirming the schedule advances, then with a real "
+                       "exception injected into build() confirming the "
+                       "schedule does not advance and will retry next tick"},
         ],
     },
 ]

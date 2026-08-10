@@ -225,16 +225,23 @@ def _start_poller():
 
 def _brief_scheduler():
     """Composes and dispatches the morning brief on its own cadence,
-    independent of any single telescope's poll interval."""
+    independent of any single telescope's poll interval.
+
+    `last` only advances on success, the same fix _poller() got: advancing
+    it unconditionally meant a single failed build/dispatch (any telescope's
+    cached board being briefly unreadable, a notifier hiccup) would silently
+    not retry for a full BRIEF_HOURS — 24h by default — instead of the very
+    next tick.
+    """
     last = 0
     while True:
         if time.time() >= last + BRIEF_HOURS * 3600:
             try:
                 digest = brief_data.build(hours=BRIEF_HOURS)
                 notifier.dispatch_brief(brief_data.render_text(digest))
+                last = time.time()
             except Exception:
                 traceback.print_exc()
-            last = time.time()
         time.sleep(60)
 
 
