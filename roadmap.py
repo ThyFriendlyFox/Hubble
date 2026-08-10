@@ -115,10 +115,25 @@ PHASES = [
         "items": [
             {"name": "Kepler entity resolution", "done": False,
              "detail": "resolve issuers to domains; replaces fuzzy HN name matching"},
-            {"name": "Kepler hiring signal", "done": False,
-             "detail": "Greenhouse/Lever/Ashby board endpoints — the honest traction metric"},
+            {"name": "Kepler hiring signal", "done": True,
+             "detail": "open-role counts from Greenhouse/Lever/Ashby, join key is a "
+                       "guessed slug from the company name — not a real identifier "
+                       "like Form D's CIK. Greenhouse hits are verified against the "
+                       "board's own stated company name; Lever/Ashby have no such "
+                       "check, so those rest on slug distinctiveness alone. Verified "
+                       "live (MedRhythms, Inc. -> Lever, 8 open clinical roles, "
+                       "confirmed genuine not a collision) and checked SAM.gov as an "
+                       "alternative for the next item down — it 404s without a "
+                       "registered API key, same blocked-without-a-key category as "
+                       "Semantic Scholar. Also fixed a kernel bug found in the "
+                       "process: telescope/http.py retried a plain 404 three times "
+                       "with backoff before giving up, wasting ~2.5s per guess on "
+                       "an expected-common case"},
             {"name": "Jackson solicitations", "done": False,
-             "detail": "SAM.gov opportunities as a leading indicator ahead of obligations"},
+             "detail": "SAM.gov opportunities as a leading indicator ahead of "
+                       "obligations — confirmed blocked without a registered API "
+                       "key (404 on the public search path), same category as "
+                       "Semantic Scholar, not attempted further without one"},
             {"name": "Jackson tech-area board", "done": False,
              "detail": "promote the PSC panel into a rankable second board"},
             {"name": "Jackson · unmapped defense startups", "done": True,

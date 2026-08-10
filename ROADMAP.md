@@ -44,13 +44,13 @@ _Generated from `roadmap.py`, which also backs the dashboard's ROADMAP tab._
 - [ ] **Topic auto-discovery** — graduate from curated watchlist to embedding-cluster resolution
 - [ ] **Semantic Scholar key** — still blocked without one — its unauthenticated quota is a small pool shared globally by every unkeyed caller, confirmed not a proxy artifact by retrying locally with backoff
 
-## PHASE 3 · MAKING THE SIGNAL SHARPER  ·  `next`  (2/8)
+## PHASE 3 · MAKING THE SIGNAL SHARPER  ·  `next`  (3/8)
 
 > Everything here improves telescopes that already exist.
 
 - [ ] **Kepler entity resolution** — resolve issuers to domains; replaces fuzzy HN name matching
-- [ ] **Kepler hiring signal** — Greenhouse/Lever/Ashby board endpoints — the honest traction metric
-- [ ] **Jackson solicitations** — SAM.gov opportunities as a leading indicator ahead of obligations
+- [x] **Kepler hiring signal** — open-role counts from Greenhouse/Lever/Ashby, join key is a guessed slug from the company name — not a real identifier like Form D's CIK. Greenhouse hits are verified against the board's own stated company name; Lever/Ashby have no such check, so those rest on slug distinctiveness alone. Verified live (MedRhythms, Inc. -> Lever, 8 open clinical roles, confirmed genuine not a collision) and checked SAM.gov as an alternative for the next item down — it 404s without a registered API key, same blocked-without-a-key category as Semantic Scholar. Also fixed a kernel bug found in the process: telescope/http.py retried a plain 404 three times with backoff before giving up, wasting ~2.5s per guess on an expected-common case
+- [ ] **Jackson solicitations** — SAM.gov opportunities as a leading indicator ahead of obligations — confirmed blocked without a registered API key (404 on the public search path), same category as Semantic Scholar, not attempted further without one
 - [ ] **Jackson tech-area board** — promote the PSC panel into a rankable second board
 - [x] **Jackson · unmapped defense startups** — cross-telescope join, not a new source — Jackson's obligations board can only see companies that already hold a DoD contract; a new panel reads Kepler's already-cached Form D feed (never forces it to refresh) and keeps filings whose name or industry reads defense/dual-use. Keyword-on-name only, so it misses deliberately-named stealth companies (Anduril doesn't say 'defense' anywhere) and is often empty — obvious-by-name defense filers are rare in any 12-day window. Needed a kernel change: telescope.panels() so a telescope can return more than one secondary board (Jackson now has two)
 - [ ] **Simons 13F whale tracking** — EDGAR 13F position deltas; 45-day lag stated on the row

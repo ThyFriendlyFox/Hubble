@@ -20,9 +20,21 @@ Sources (all public, no keys):
   SEC EDGAR daily index   every Form D / D-A filed, by day
   SEC EDGAR filing XML    offering amount, amount sold, industry, state, date
   HN Algolia              public attention — or the conspicuous absence of it
+  Greenhouse/Lever/Ashby  open-role counts — the honest traction signal
 
 Deliberately the outside-in complement to warm-intro dealflow: it sees what
 nobody has introduced you to yet.
+
+── A stated limitation on the hiring signal ─────────────────────────────────
+Unlike Form D's CIK or USAspending's UEI, nothing ties a guessed job-board
+slug to the filer that actually owns it — the "join key" here is a guess
+derived from the company name, tried against three ATS platforms in turn.
+Greenhouse alone has an independent check: its board-info endpoint returns
+the company's own display name, so a Greenhouse hit is verified against it
+before being trusted. Lever and Ashby have no such endpoint, so a hit there
+rests only on the guessed slug being distinctive enough that colliding with
+an unrelated real company is implausible — the same minimum-length gate
+already used for HN attention matching, and the same weaker-evidence caveat.
 """
 import datetime as dt
 import re
@@ -30,8 +42,8 @@ import time
 from urllib.parse import quote_plus
 
 from telescope import Column, Signal, Telescope
-from telescope.events import ClimberRule, NewEntrantRule, NewLeaderRule
-from telescope.http import get_json, get_text
+from telescope.events import ClimberRule, DeltaRule, NewEntrantRule, NewLeaderRule
+from telescope.http import get_json, get_text, try_json
 from telescope.registry import register
 
 SEC_UA = {"User-Agent": "Observatory-Telescope/1.0 (thyfriendlyfox@gmail.com)"}
@@ -113,6 +125,23 @@ def _core_name(name):
     return re.sub(r"\s+", " ", s).strip().lower()
 
 
+def _slug(name):
+    """A guessed job-board slug: 'Onkos Surgical, Inc.' -> 'onkos-surgical'.
+
+    Real slugs are chosen by the company and often diverge from this (an
+    abbreviation, a totally different brand, no hyphens) — this is a guess,
+    not a lookup, which is exactly why a hit needs independent verification
+    where one is available (see `_hiring`)."""
+    core = _core_name(name)
+    return re.sub(r"\s+", "-", core) if core else None
+
+
+def _distinctive_enough(slug):
+    """Same risk _hn's length gate guards against: a short/generic guessed
+    slug could collide with an unrelated real company's real board."""
+    return bool(slug) and (len(slug) >= 5 and ("-" in slug or len(slug) >= 10))
+
+
 @register
 class Kepler(Telescope):
     slug = "kepler"
@@ -121,14 +150,17 @@ class Kepler(Telescope):
     glyph = "🪐"
     tagline = "PRIVATE RAISE DETECTION"
     entity_label = "ISSUERS"
-    sources_label = "SEC FORM D · EDGAR · HACKER NEWS"
+    sources_label = "SEC FORM D · EDGAR · HACKER NEWS · GREENHOUSE/LEVER/ASHBY"
     caveat = ("US Reg D filings only — no non-US raises, and equity crowdfunding "
               "and some 4(a)(2) private placements never file. Amounts are as "
               "reported by the issuer. Funds and SPVs are flagged as noise, not "
               "deleted; the classifier is name- and industry-based, so it errs. "
               "Attention is matched on company name against Hacker News, which "
               "is approximate — a missing HN signal is weaker evidence than a "
-              "present one.")
+              "present one. Hiring is a guessed job-board slug, not a real "
+              "identifier — verified against the company's own name on "
+              "Greenhouse, unverified on Lever/Ashby, and absent for most "
+              "issuers simply because the guess didn't land on anything.")
 
     cache_ttl = 6 * 3600
     poll_seconds = 12 * 3600
@@ -140,15 +172,17 @@ class Kepler(Telescope):
         Signal("recency", "days_ago", "FRESHNESS", higher=False),
         Signal("buzz", "hn_points", "PUBLIC ATTENTION", log=True),
         Signal("tech", "tech_score", "TECH / DEEPTECH"),
+        Signal("hiring", "hiring_count", "HIRING VELOCITY", log=True),
     )
     default_weights = {
-        "size": 30, "sold": 15, "conviction": 15, "recency": 20,
-        "buzz": 5, "tech": 15,
+        "size": 28, "sold": 13, "conviction": 13, "recency": 18,
+        "buzz": 5, "tech": 13, "hiring": 10,
     }
     # Note this dampens on *offering economics*, not on public attention — a
     # raise with zero public footprint is the whole point of Kepler, so `buzz`
     # is deliberately excluded here. What can't be ranked is a filing that
-    # discloses no numbers at all.
+    # discloses no numbers at all. `hiring` stays out for the same reason as
+    # `buzz`: a stealth company hiring nobody yet is not evidence against it.
     quality_signals = ("size",)
 
     columns = (
@@ -161,6 +195,8 @@ class Kepler(Telescope):
         Column("state", "ST", "text"),
         Column("filed", "FILED", "date"),
         Column("hn_points", "HN", "int"),
+        Column("hiring_count", "OPEN ROLES", "int"),
+        Column("hiring_platform", "ATS", "text"),
     )
 
     rules = (
@@ -178,15 +214,22 @@ class Kepler(Telescope):
             rank_delta=12, score_delta=4.0,
             headline="📈 {name} moved up {rank_delta} to #{rank} on the Kepler board.",
         ),
+        DeltaRule(
+            field="hiring_count", direction="up", frac=0.50, min_abs=3,
+            type="hiring_surge",
+            headline="👷 {name} is hiring fast — open roles up {pct}% "
+                     "({old_fmt} → {new_fmt}).",
+        ),
     )
     snapshot_fields = (
         "offering_amount", "raise_size", "raise_fmt", "amount_sold",
         "sold_pct", "industry", "state",
         "filed", "hn_points", "cik", "stealth",
+        "hiring_count", "hiring_platform",
     )
 
     def source_keys(self):
-        return ["filings", "details", "hn"]
+        return ["filings", "details", "hn", "hiring"]
 
     # ── sources ──────────────────────────────────────────────────────────
     def _index_day(self, day):
@@ -305,6 +348,63 @@ class Kepler(Telescope):
             return out
         return self.cache.cached("hn", ttl, go)
 
+    def _hiring(self, names, ttl):
+        """Open-role count per issuer, tried against Greenhouse, then Lever,
+        then Ashby, using a guessed slug from the company's core name.
+
+        The single most honest traction signal available for free — but
+        unlike Form D's CIK or USAspending's UEI, the slug is a guess, not a
+        real identifier. Greenhouse's board-info endpoint returns the
+        company's own display name, so a Greenhouse hit is verified against
+        it before being trusted; Lever and Ashby have no equivalent, so a
+        hit there is kept only when the slug is distinctive enough that an
+        accidental collision with an unrelated real company is implausible.
+        Capped at ENRICH_TOP issuers, same as `_hn`.
+        """
+        def go():
+            out = {}
+            for name in names[:ENRICH_TOP]:
+                slug = _slug(name)
+                if not _distinctive_enough(slug):
+                    continue
+                core = _core_name(name)
+
+                info = try_json(
+                    f"https://boards-api.greenhouse.io/v1/boards/{slug}",
+                    default=None,
+                )
+                if info and info.get("name") and _core_name(info["name"]) == core:
+                    jobs = try_json(
+                        f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs",
+                        default=None,
+                    )
+                    if jobs and jobs.get("jobs") is not None:
+                        out[name] = {
+                            "count": len(jobs["jobs"]), "platform": "greenhouse",
+                        }
+                        time.sleep(0.15)
+                        continue
+
+                jobs = try_json(
+                    f"https://api.lever.co/v0/postings/{slug}?mode=json",
+                    default=None,
+                )
+                if isinstance(jobs, list) and jobs:
+                    out[name] = {"count": len(jobs), "platform": "lever"}
+                    time.sleep(0.15)
+                    continue
+
+                data = try_json(
+                    f"https://api.ashbyhq.com/posting-api/job-board/{slug}",
+                    default=None,
+                )
+                if data and data.get("jobs"):
+                    out[name] = {"count": len(data["jobs"]), "platform": "ashby"}
+
+                time.sleep(0.15)
+            return out
+        return self.cache.cached("hiring", ttl, go)
+
     # ── join ─────────────────────────────────────────────────────────────
     def collect(self, force=False):
         ttl = self.ttl(force)
@@ -358,12 +458,14 @@ class Kepler(Telescope):
                 "noise": (_is_fund(name, industry) or not (offering or sold)),
             })
 
-        # Attention lookup, biggest non-fund raises first.
+        # Attention + hiring lookups, biggest non-fund raises first.
         candidates = sorted(
             (r for r in rows if not r["noise"]),
             key=lambda r: r["raise_size"] or 0, reverse=True,
         )
-        hn = self._hn([r["name"] for r in candidates], ttl)
+        names = [r["name"] for r in candidates]
+        hn = self._hn(names, ttl)
+        hiring = self._hiring(names, ttl)
         for r in rows:
             info = hn.get(r["name"])
             r["hn_points"] = info["points"] if info else None
@@ -373,6 +475,9 @@ class Kepler(Telescope):
                 not r["noise"] and (r["raise_size"] or 0) >= 5e6
                 and info is not None and info["stories"] == 0
             )
+            hire = hiring.get(r["name"])
+            r["hiring_count"] = hire["count"] if hire else None
+            r["hiring_platform"] = hire["platform"] if hire else None
         return rows
 
     # ── secondary panel: where private capital is landing ────────────────
