@@ -239,3 +239,19 @@ def test_api_toggle_unknown_slug_is_404_without_touching_real_state(client):
     data/observatory.json the real dev server reads."""
     resp = client.post("/api/observatory/does-not-exist/toggle")
     assert resp.status_code == 404
+
+
+def test_api_sweep_forces_a_real_sweep_and_returns_the_right_shape(client):
+    """The one route the tests above don't reach: /sweep forces a real
+    collect(force=True) and writes a real snapshot, unlike every GET above
+    which reads whatever's already cached. Picked Reddington -- a small
+    (12 gauges), unpaced telescope -- to keep this fast (~6s measured)
+    rather than triggering a cold Kepler/Holmdel sweep that can take
+    minutes; that slow-path behavior is already covered by the threading
+    and staleness-guard work verified live earlier this session."""
+    resp = client.post("/api/telescope/reddington/sweep")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert isinstance(data["events"], list)
+    assert data["count"] == len(data["events"])
+    assert data["error"] is None

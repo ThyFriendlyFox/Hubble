@@ -1003,6 +1003,25 @@ PHASES = [
                        "attempted, and simulating a total outage through the "
                        "real cache confirmed all 220 real entries survive "
                        "instead of being overwritten with {}"},
+            {"name": "Test coverage for the /sweep API route", "done": True,
+             "detail": "the last untested app.py route — every earlier Flask "
+                       "API test used force=False (reads whatever's already "
+                       "cached), so /api/telescope/<slug>/sweep, the one "
+                       "route that forces a real collect(force=True) and "
+                       "writes a real snapshot, was never exercised through "
+                       "the HTTP layer. Timed a real forced Reddington sweep "
+                       "first (5.78s) before deciding whether adding it was "
+                       "worth the extra suite time — Reddington's small (12 "
+                       "gauges), unpaced fetch_panel() keeps this fast, "
+                       "unlike Kepler/Holmdel which can take minutes on a "
+                       "cold cache; that slow-path behavior is already "
+                       "covered by this session's threading and staleness-"
+                       "guard work. Also re-checked Semantic Scholar, which "
+                       "returned a genuine 200 again this iteration — "
+                       "re-confirmed still fundamentally unusable by hitting "
+                       "it 8 more times with 3s spacing: 429 every single "
+                       "time, the same isolated-fluke pattern as before, not "
+                       "a real unblocking"},
         ],
     },
 ]
