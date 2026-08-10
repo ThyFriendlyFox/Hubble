@@ -42,9 +42,25 @@ class Cache:
             return None
         return time.time() - os.path.getmtime(p)
 
-    def cached(self, key, ttl, producer):
-        """get-or-produce. `producer` is only called on a miss."""
+    def cached(self, key, ttl, producer, is_empty=None):
+        """get-or-produce. `producer` is only called on a miss.
+
+        A transient total outage (every request in the batch failed) should
+        not overwrite a still-usable stale cache with a blackout that then
+        gets served as truth for the rest of `ttl` — up to 12h for some
+        telescopes. Pass `is_empty(fresh) -> bool` to opt in: if the fresh
+        result looks like a total failure and an older file still exists on
+        disk, that stale-but-real value is served instead and the miss is
+        retried on the next call rather than written over.
+        """
         hit = self.get(key, ttl)
         if hit is not None:
             return hit
-        return self.set(key, producer())
+        fresh = producer()
+        if is_empty and is_empty(fresh) and os.path.exists(self._path(key)):
+            try:
+                with open(self._path(key), encoding="utf-8") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
+        return self.set(key, fresh)

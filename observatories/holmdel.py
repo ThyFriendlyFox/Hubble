@@ -337,7 +337,11 @@ class Holmdel(Telescope):
                 out[t.key] = {"recent": recent, "prior": prior}
                 time.sleep(0.15)     # generous unauthenticated quota, still be polite
             return out
-        return self.cache.cached("openalex", ttl, go)
+
+        def totally_failed(result):
+            return not any(v.get("recent") is not None for v in result.values())
+
+        return self.cache.cached("openalex", ttl, go, is_empty=totally_failed)
 
     def _npm(self, ttl):
         def go():

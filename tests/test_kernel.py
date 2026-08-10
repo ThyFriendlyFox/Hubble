@@ -9,7 +9,11 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import shutil                                                     # noqa: E402
+import tempfile                                                   # noqa: E402
+
 from telescope import ranking                                    # noqa: E402
+from telescope.cache import Cache                                # noqa: E402
 from telescope.events import (ClimberRule, DeltaRule,            # noqa: E402
                               NewEntrantRule, NewLeaderRule, ThresholdRule)
 from telescope.ranking import Signal                             # noqa: E402
@@ -177,6 +181,40 @@ def test_threshold_rule_detects_both_crossings():
     assert rule.row({"v": 0.1}, {**row, "v": -0.1}, 0)[0]["headline"] == "down under 0.0"
     assert rule.row({"v": 0.1}, {**row, "v": 0.2}, 0) == []   # no crossing
     assert rule.row(None, {**row, "v": 0.2}, 0) == []         # nothing to cross from
+
+
+# ── cache resilience ─────────────────────────────────────────────────────
+def test_cache_keeps_stale_value_over_a_total_outage():
+    """A transient total-outage fetch must not overwrite a still-usable
+    cache with a blackout that then gets served as truth for the rest of
+    the TTL — this is the bug that briefly zeroed out Holmdel's research
+    signal when OpenAlex rate-limited an entire sweep at once."""
+    tmp = tempfile.mkdtemp()
+    try:
+        cache = Cache("test_ns")
+        cache.dir = tmp   # isolate from the real data/ directory
+        good = {"a": 1, "b": 2}
+        assert cache.cached("k", 3600, lambda: good) == good
+        # ttl=0 forces a miss even though the good value is fresh.
+        empty = cache.cached("k", 0, lambda: {}, is_empty=lambda r: not r)
+        assert empty == good
+        # A producer that succeeds should still overwrite normally.
+        better = {"a": 9}
+        assert cache.cached("k", 0, lambda: better, is_empty=lambda r: not r) == better
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_cache_writes_empty_result_when_nothing_cached_yet():
+    """No prior cache to fall back to -> the empty result is recorded, not
+    silently discarded forever."""
+    tmp = tempfile.mkdtemp()
+    try:
+        cache = Cache("test_ns")
+        cache.dir = tmp
+        assert cache.cached("k", 3600, lambda: {}, is_empty=lambda r: not r) == {}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def test_bad_headline_template_does_not_raise():
