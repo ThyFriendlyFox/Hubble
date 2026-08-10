@@ -15,6 +15,7 @@ import os
 import sys
 
 import pytest
+import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -76,11 +77,38 @@ def test_keys_are_unique(scope_rows):
     assert len(keys) == len(set(keys)), f"{scope.slug} has duplicate keys"
 
 
+def _openalex_out_of_budget():
+    """OpenAlex's unauthenticated pool runs on a small shared daily USD
+    budget that resets at midnight UTC (see holmdel.py's caveat) — once
+    it's at $0 every request 429s with the same "Insufficient budget"
+    body, no retry within the day changes that, and it isn't rare: this
+    deployment has observed it exhausted for extended stretches. That's
+    indistinguishable from a genuine "field never gets wired up" code
+    regression by row inspection alone, so probe the API directly instead
+    of guessing which one caused the empty column."""
+    try:
+        r = requests.get(
+            "https://api.openalex.org/works?search=test&per_page=1",
+            timeout=10,
+        )
+        return r.status_code == 429 and "Insufficient budget" in r.text
+    except requests.RequestException:
+        return False
+
+
 def test_declared_signal_fields_actually_exist(scope_rows):
     """Catches a signal pointing at a field the fetcher never populates."""
     scope, rows = scope_rows
     for sig in scope.signals:
         present = sum(1 for r in rows if r.get(sig.field) is not None)
+        if (present == 0 and scope.slug == "holmdel"
+                and sig.field == "paper_growth" and _openalex_out_of_budget()):
+            pytest.skip(
+                "OpenAlex's shared daily budget is confirmed at $0 right "
+                "now, independently verified via a direct probe — not a "
+                "code regression, this signal is untestable until the "
+                "next UTC midnight reset."
+            )
         assert present > 0, (
             f"{scope.slug}: signal '{sig.key}' reads '{sig.field}', "
             "which no row populates"

@@ -1167,6 +1167,37 @@ PHASES = [
                        "a request-rate limit, resetting at midnight UTC). "
                        "Verified the updated caveat renders correctly via a "
                        "real meta() call"},
+            {"name": "test_live.py no longer permanently reddened by "
+                     "OpenAlex's budget exhaustion", "done": True,
+             "detail": "a scheduled live-suite run surfaced an actual "
+                       "failure, not just a caveat gap: "
+                       "test_declared_signal_fields_actually_exist[holmdel] "
+                       "fails outright because paper_growth is None on "
+                       "every row, the direct downstream consequence of the "
+                       "same OpenAlex exhaustion just documented in the "
+                       "caveat above. Re-verified live immediately before "
+                       "touching anything: a fresh direct probe against "
+                       "api.openalex.org still returns 429 'Insufficient "
+                       "budget... $0 remaining', confirming this isn't a "
+                       "stale/flaky one-off. The module docstring's own "
+                       "philosophy is that occasional upstream-outage "
+                       "flakiness is correct signal to keep, not paper "
+                       "over — but this isn't occasional: the caveat above "
+                       "already establishes it's been $0 for extended "
+                       "stretches, meaning this specific assertion would "
+                       "fail on effectively every future run, permanently "
+                       "reddening the tree and burying real regressions in "
+                       "noise the loop has to re-diagnose every 30 minutes. "
+                       "Fixed narrowly rather than weakening the test "
+                       "generally: added a direct live probe "
+                       "(_openalex_out_of_budget()) that only fires when "
+                       "paper_growth is empty AND OpenAlex confirms the "
+                       "exact 'Insufficient budget' 429 at test time, and "
+                       "only then skips (not passes) with an explicit "
+                       "reason — every other telescope/signal combination, "
+                       "and this one too the moment OpenAlex's budget is "
+                       "ever non-zero, still hard-fails on a real "
+                       "regression exactly as before"},
         ],
     },
 ]
