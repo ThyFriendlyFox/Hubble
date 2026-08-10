@@ -1087,6 +1087,33 @@ PHASES = [
                        "sources list. The architecture sections (kernel "
                        "stages, adding a telescope, the API table, layout) "
                        "were already accurate and left unchanged"},
+            {"name": "HANDOFF.md updated to match reality", "done": True,
+             "detail": "the same drift just fixed in README.md, but more "
+                       "consequential: HANDOFF.md is the first document any "
+                       "fresh agent reads, and its 'Start here' section was "
+                       "still the literal first-iteration task from before "
+                       "this whole build loop began — re-probing OpenAlex/"
+                       "arXiv/GitHub/Semantic Scholar and adding a research "
+                       "signal to Holmdel, all completed dozens of commits "
+                       "ago. A fresh agent (or the standing loop prompt's own "
+                       "'if this is the first iteration' framing, which "
+                       "can't be edited from here since it's stored outside "
+                       "the repo) following this literally would redo "
+                       "already-shipped work instead of checking git log/"
+                       "ROADMAP.md first, the exact trap this loop has been "
+                       "correctly avoiding by re-reading state each "
+                       "iteration rather than trusting a stale prompt. Also "
+                       "stale: the test count ('73 tests pass', now 62 "
+                       "kernel + 76 live and still growing — verified exact "
+                       "against a real collection run before writing it "
+                       "down) and convention #2's example, which cited "
+                       "Holmdel's 'missing research source' as the honesty "
+                       "illustration — no longer true, replaced with a "
+                       "still-current one (the LMArena removal). Rewrote "
+                       "'Start here' to point at the three sources still "
+                       "genuinely blocked and then at the roadmap/Phase 5 "
+                       "pattern for finding real remaining work, rather than "
+                       "a first-iteration task frozen in amber"},
         ],
     },
 ]

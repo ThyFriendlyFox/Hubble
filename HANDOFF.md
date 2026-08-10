@@ -8,7 +8,24 @@ system is), `TELESCOPES.md` (why the pattern is shaped this way) and
 
 Six telescopes run on live public data, no API keys. Kernel in `telescope/`,
 one domain pack per telescope in `observatories/`, one generic frontend driven
-entirely by telescope metadata. 73 tests pass.
+entirely by telescope metadata. 62 kernel tests + 76 live tests (both suites
+grow as the build continues — check the actual count with `-q`, don't trust
+this number for long).
+
+Every Phase 0-4 roadmap item is either shipped or genuinely, repeatedly
+re-confirmed blocked on something external (SAM.gov and Semantic Scholar both
+need a registered key; Jackson's own SBIR fetch 429s independent of any key).
+Holmdel's research source (OpenAlex + arXiv), GitHub repo velocity, and the
+`crossing_over` event this section used to tell you to build are all done —
+if you're being told to "add OpenAlex to Holmdel" by an old standing prompt,
+check `git log` and `ROADMAP.md` first; that work is finished, don't redo it.
+Phase 5 (hardening) is where most recent work has landed: cache-poisoning
+resilience across every fetcher in the fleet, poller/brief-scheduler retry
+scheduling, cross-telescope joins that were silently capable of forcing a
+sweep of the telescope they read from, a frontend race condition where
+switching telescopes mid-refresh could revert to stale data, and a dead
+source (Hubble's LMArena fallback, 404 for a while, quietly contributing
+nothing) found and removed rather than left silently broken.
 
 Work is on branch `claude/telescope-dashboard-concept-lo1ay8`, open as **PR #1**.
 Pushing to that branch updates the PR — do not open a new one.
@@ -20,36 +37,34 @@ python -m pytest tests/test_kernel.py -q  # pure logic, fast
 python -m pytest tests/test_live.py -q    # hits real sources, slow when cold
 ```
 
-## Start here: re-probe the sources that were blocked
+## Start here: re-probe what's still blocked, then read the roadmap
 
-The previous environment was a sandboxed container behind a shared egress
-proxy. Several sources were unreachable **there** that are probably fine from a
-normal local machine. This is the highest-value first task, because it unblocks
-the one telescope that shipped incomplete.
+Before picking a task, re-check the small list of sources still genuinely
+blocked — these get re-verified almost every iteration and the answer has
+been consistently unchanged for a long time, but "consistently unchanged for
+a long time" is not the same as "permanently impossible," so don't skip this:
 
-| Source | Symptom in the container | Worth retrying locally |
+| Source | Symptom | Notes |
 |---|---|---|
-| arXiv query API | `429 Rate exceeded`, then timeouts | yes |
-| Semantic Scholar | `429` | yes |
-| OpenAlex | `429 Insufficient budget` (shared IP quota) | yes |
-| GitHub search API | `403` — proxy binds GitHub to configured repos | yes |
-| pypistats.org | `429` | yes |
-| Crossref | works, but its query API is an **OR** match — a quoted 3-word topic returns millions of rows, so counts are not topic counts | no, it is semantically wrong, not blocked |
+| SAM.gov opportunities | `404` on the public search path | needs a registered API key |
+| Semantic Scholar | `429`, occasionally a genuine `200` | the unauthenticated quota is a small pool shared globally by every unkeyed caller; an isolated success is not a real unblocking — confirmed by immediately retrying several more times, still 429 |
+| Jackson's own SBIR fetch | `429` / `403`, worse than "rate-limits hard" | independent of SAM.gov's key requirement |
 
-Verify with a quick script before building on any of them. If arXiv, Semantic
-Scholar or OpenAlex works locally, add a **research velocity** source to
-Holmdel — papers are the earliest stage of an idea and Holmdel currently cannot
-see them at all. That also unlocks the `crossing_over` event (research →
-builders), which is specced but deliberately unimplemented rather than faked.
-
-If GitHub search works, add repo-creation and star velocity to Holmdel as a
-fourth independent surface.
+If all three are still blocked (expect this), read `ROADMAP.md` for what's
+already done rather than re-deriving it, then look for real, previously-
+unflagged gaps rather than re-treading covered ground: audit a class of
+fetcher for the same failure mode that's already been fixed elsewhere (cache
+resilience, retry scheduling, a dead upstream URL), verify a documentation
+file against current reality the way this section itself needed fixing, or
+extend test coverage into a genuinely untested corner. `roadmap.py`'s own
+Phase 5 entries are a log of exactly this kind of iteration — read a few
+before starting to calibrate scope and the level of live verification
+expected.
 
 ## Then work the roadmap
 
 `roadmap.py` is the source of truth; it renders both the dashboard's ROADMAP tab
 and `ROADMAP.md`. Regenerate with `python roadmap.py > ROADMAP.md` after edits.
-Phase 2B (unblocking Holmdel) then Phase 3 (sharpening existing telescopes).
 
 ## Conventions that must not be broken
 
@@ -61,7 +76,12 @@ Phase 2B (unblocking Holmdel) then Phase 3 (sharpening existing telescopes).
 2. **State blind spots.** Every telescope sets a `caveat` describing what it
    *cannot* see, rendered on its board. When a source is unavailable, say so
    and drop the signal — never substitute a proxy and present it as the real
-   thing. Holmdel's missing research source is documented, not hidden.
+   thing. Applies both ways: Reddington's caveat says plainly that lane-level
+   spot rates are paywalled and it only sees index level; when Hubble's
+   LMArena fallback turned out to have been silently 404ing (dead code
+   contributing nothing, no error ever surfaced), the fix was to remove it
+   and state the resulting limitation, not to leave it quietly doing
+   nothing while implying it still worked.
 3. **Live tests, not fixtures.** `tests/test_live.py` hits the real APIs on
    purpose: a fixture passing while an upstream source changed shape is the
    exact failure worth catching. It asserts every declared signal and column is
