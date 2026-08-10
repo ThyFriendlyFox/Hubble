@@ -44,11 +44,11 @@ _Generated from `roadmap.py`, which also backs the dashboard's ROADMAP tab._
 - [ ] **Topic auto-discovery** — graduate from curated watchlist to embedding-cluster resolution
 - [ ] **Semantic Scholar key** — still blocked without one — its unauthenticated quota is a small pool shared globally by every unkeyed caller, confirmed not a proxy artifact by retrying locally with backoff
 
-## PHASE 3 · MAKING THE SIGNAL SHARPER  ·  `next`  (3/8)
+## PHASE 3 · MAKING THE SIGNAL SHARPER  ·  `next`  (4/8)
 
 > Everything here improves telescopes that already exist.
 
-- [ ] **Kepler entity resolution** — resolve issuers to domains; replaces fuzzy HN name matching
+- [x] **Kepler entity resolution** — a guessed '.com' domain per issuer, verified against the homepage's own <title> before being trusted — load-bearing, not a formality: verifying this live, a random real filer's guessed domain resolved to an unrelated squatted gambling site. When a domain resolves, HN attention switches from fuzzy title-text search to checking the story's own linked URL — a precision/recall trade, not a strict upgrade: it catches a company's own launch posts more reliably but misses third-party news coverage linking to a news site instead. Kepler takes that trade because a false 'no attention' costs nothing (renormalises away) while a false 'attention found' is the exact failure this instrument exists to avoid. Only 12/220 issuers resolved a domain this sweep — most pre-launch filers simply have no live site yet
 - [x] **Kepler hiring signal** — open-role counts from Greenhouse/Lever/Ashby, join key is a guessed slug from the company name — not a real identifier like Form D's CIK. Greenhouse hits are verified against the board's own stated company name; Lever/Ashby have no such check, so those rest on slug distinctiveness alone. Verified live (MedRhythms, Inc. -> Lever, 8 open clinical roles, confirmed genuine not a collision) and checked SAM.gov as an alternative for the next item down — it 404s without a registered API key, same blocked-without-a-key category as Semantic Scholar. Also fixed a kernel bug found in the process: telescope/http.py retried a plain 404 three times with backoff before giving up, wasting ~2.5s per guess on an expected-common case
 - [ ] **Jackson solicitations** — SAM.gov opportunities as a leading indicator ahead of obligations — confirmed blocked without a registered API key (404 on the public search path), same category as Semantic Scholar, not attempted further without one
 - [ ] **Jackson tech-area board** — promote the PSC panel into a rankable second board

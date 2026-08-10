@@ -19,11 +19,37 @@ new ones as they appear.
 Sources (all public, no keys):
   SEC EDGAR daily index   every Form D / D-A filed, by day
   SEC EDGAR filing XML    offering amount, amount sold, industry, state, date
-  HN Algolia              public attention — or the conspicuous absence of it
+  A guessed .com domain   verified against the homepage's own <title>
+  HN Algolia              public attention — precise when a domain resolved,
+                          fuzzy title matching otherwise
   Greenhouse/Lever/Ashby  open-role counts — the honest traction signal
 
 Deliberately the outside-in complement to warm-intro dealflow: it sees what
 nobody has introduced you to yet.
+
+── Entity resolution, and why it's still partly a guess ────────────────────
+Form D discloses no website, so a domain is guessed from the company's core
+name (one shot, `.com` only) and only trusted if the fetched homepage's own
+<title> mentions the company. That check is load-bearing, not a formality:
+verifying this exact feature against live filings, a random real Form D
+filer's guessed domain resolved to a completely unrelated gambling site on
+an expired, squatted domain.
+
+Once a domain is verified, Hacker News matching switches from fuzzy title-
+text search to checking whether the *story's own linked URL* belongs to
+that domain. This is a trade, not a strict upgrade: it catches a submission
+of the company's own site (a launch, a Show HN) with far higher confidence
+than title text can, because the phrase happening to appear in a title
+proves the story *mentions* the company, not that it's *about* their own
+page. But it will miss real news coverage entirely — a TechCrunch story
+about the company links to techcrunch.com, not the company's domain, so
+domain matching sees nothing where title matching would have caught it.
+Kepler takes the trade because a false "no attention" is the correct
+failure mode here (renormalises away, costs nothing) while a false
+"attention found" is the one this instrument exists to avoid. Most issuers
+still get no domain at all: many pre-launch companies have no live site
+yet, and a single short-timeout guess against `.com` alone misses anyone on
+another TLD or a different domain shape entirely.
 
 ── A stated limitation on the hiring signal ─────────────────────────────────
 Unlike Form D's CIK or USAspending's UEI, nothing ties a guessed job-board
@@ -39,11 +65,11 @@ already used for HN attention matching, and the same weaker-evidence caveat.
 import datetime as dt
 import re
 import time
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 from telescope import Column, Signal, Telescope
 from telescope.events import ClimberRule, DeltaRule, NewEntrantRule, NewLeaderRule
-from telescope.http import get_json, get_text, try_json
+from telescope.http import get_json, get_text, probe_text, try_json
 from telescope.registry import register
 
 SEC_UA = {"User-Agent": "Observatory-Telescope/1.0 (thyfriendlyfox@gmail.com)"}
@@ -142,6 +168,22 @@ def _distinctive_enough(slug):
     return bool(slug) and (len(slug) >= 5 and ("-" in slug or len(slug) >= 10))
 
 
+_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.I | re.S)
+
+
+def _looks_like_the_company(core, html):
+    """A fetched homepage is trusted only if its own <title> mentions the
+    company — not merely "did something answer at this domain". Dead
+    startup domains get squatted; a guessed domain resolving to a live page
+    proves nothing about who is currently running it."""
+    m = _TITLE_RE.search(html or "")
+    if not m:
+        return False
+    title = m.group(1).lower()
+    words = [w for w in core.split() if len(w) >= 3]
+    return bool(words) and all(w in title for w in words)
+
+
 @register
 class Kepler(Telescope):
     slug = "kepler"
@@ -150,17 +192,23 @@ class Kepler(Telescope):
     glyph = "🪐"
     tagline = "PRIVATE RAISE DETECTION"
     entity_label = "ISSUERS"
-    sources_label = "SEC FORM D · EDGAR · HACKER NEWS · GREENHOUSE/LEVER/ASHBY"
+    sources_label = "SEC FORM D · EDGAR · DOMAIN RESOLUTION · HACKER NEWS · GREENHOUSE/LEVER/ASHBY"
     caveat = ("US Reg D filings only — no non-US raises, and equity crowdfunding "
               "and some 4(a)(2) private placements never file. Amounts are as "
               "reported by the issuer. Funds and SPVs are flagged as noise, not "
               "deleted; the classifier is name- and industry-based, so it errs. "
-              "Attention is matched on company name against Hacker News, which "
-              "is approximate — a missing HN signal is weaker evidence than a "
-              "present one. Hiring is a guessed job-board slug, not a real "
-              "identifier — verified against the company's own name on "
-              "Greenhouse, unverified on Lever/Ashby, and absent for most "
-              "issuers simply because the guess didn't land on anything.")
+              "Form D discloses no website, so WEBSITE is a single guessed "
+              "'.com' verified against the homepage's own title — most "
+              "issuers get none, either because they have no live site yet "
+              "or because the guess missed. When a domain does resolve, "
+              "Hacker News attention is matched on the story's own linked "
+              "URL, which is precise; without one it falls back to fuzzy "
+              "title-text matching, which is approximate — a missing HN "
+              "signal is weaker evidence than a present one either way. "
+              "Hiring is a guessed job-board slug, not a real identifier — "
+              "verified against the company's own name on Greenhouse, "
+              "unverified on Lever/Ashby, and absent for most issuers simply "
+              "because the guess didn't land on anything.")
 
     cache_ttl = 6 * 3600
     poll_seconds = 12 * 3600
@@ -197,6 +245,7 @@ class Kepler(Telescope):
         Column("hn_points", "HN", "int"),
         Column("hiring_count", "OPEN ROLES", "int"),
         Column("hiring_platform", "ATS", "text"),
+        Column("domain", "WEBSITE", "url"),
     )
 
     rules = (
@@ -225,11 +274,11 @@ class Kepler(Telescope):
         "offering_amount", "raise_size", "raise_fmt", "amount_sold",
         "sold_pct", "industry", "state",
         "filed", "hn_points", "cik", "stealth",
-        "hiring_count", "hiring_platform",
+        "hiring_count", "hiring_platform", "domain",
     )
 
     def source_keys(self):
-        return ["filings", "details", "hn", "hiring"]
+        return ["filings", "details", "domains", "hn", "hiring"]
 
     # ── sources ──────────────────────────────────────────────────────────
     def _index_day(self, day):
@@ -311,12 +360,46 @@ class Kepler(Telescope):
             return out
         return self.cache.cached("details", ttl, go)
 
-    def _hn(self, names, ttl):
+    def _domains(self, names, ttl):
+        """A guessed .com domain per issuer, verified against the fetched
+        homepage's own <title>.
+
+        Form D discloses no website, so this is a one-shot guess (core name,
+        no spaces, `.com` only) — not an attempt at broad TLD coverage, which
+        would multiply the request count for a search this speculative.
+        `probe_text` makes a single attempt with a short timeout per guess
+        rather than the retry/backoff every other fetch here uses, because a
+        dead domain is the common case, not a transient failure worth
+        retrying three times.
+        """
+        def go():
+            out = {}
+            for name in names[:ENRICH_TOP]:
+                core = _core_name(name)
+                slug = core.replace(" ", "")
+                if len(slug) < 8:
+                    continue
+                html = probe_text(f"https://{slug}.com", timeout=6)
+                if html and _looks_like_the_company(core, html):
+                    out[name] = f"{slug}.com"
+                time.sleep(0.1)
+            return out
+        return self.cache.cached("domains", ttl, go)
+
+    def _hn(self, names, ttl, domains=None):
         """Public attention per issuer: story count and best score on HN.
 
         Capped at ENRICH_TOP issuers per sweep to keep sweeps fast; the rest
-        simply have no buzz signal and renormalise out of the blend.
+        simply have no buzz signal and renormalise out of the blend. When a
+        domain has been verified for this issuer, matching switches from
+        fuzzy title-text search to checking whether the *story's own linked
+        URL* belongs to that domain. Higher-confidence, not higher-coverage:
+        it catches the company's own launch/Show-HN posts very reliably, but
+        misses third-party news coverage that links to a news site instead
+        of the company's own domain, which title matching would have caught.
         """
+        domains = domains or {}
+
         def go():
             out = {}
             for name in names[:ENRICH_TOP]:
@@ -333,13 +416,21 @@ class Kepler(Telescope):
                     )
                 except Exception:
                     continue
-                # Algolia ranks fuzzily, so confirm the company name actually
-                # appears in the title before believing the hit.
-                pattern = re.compile(rf"\b{re.escape(core)}\b", re.IGNORECASE)
-                hits = [
-                    h for h in data.get("hits", [])
-                    if pattern.search(h.get("title") or "")
-                ]
+                domain = domains.get(name)
+                if domain:
+                    hits = [
+                        h for h in data.get("hits", [])
+                        if domain == (urlparse(h.get("url") or "").netloc or "")
+                            .removeprefix("www.")
+                    ]
+                else:
+                    # Algolia ranks fuzzily, so confirm the company name
+                    # actually appears in the title before believing the hit.
+                    pattern = re.compile(rf"\b{re.escape(core)}\b", re.IGNORECASE)
+                    hits = [
+                        h for h in data.get("hits", [])
+                        if pattern.search(h.get("title") or "")
+                    ]
                 out[name] = {
                     "stories": len(hits),
                     "points": max([h.get("points") or 0 for h in hits], default=0),
@@ -458,15 +549,19 @@ class Kepler(Telescope):
                 "noise": (_is_fund(name, industry) or not (offering or sold)),
             })
 
-        # Attention + hiring lookups, biggest non-fund raises first.
+        # Entity resolution, attention and hiring lookups, biggest non-fund
+        # raises first. Domains are resolved before HN so attention matching
+        # can use them.
         candidates = sorted(
             (r for r in rows if not r["noise"]),
             key=lambda r: r["raise_size"] or 0, reverse=True,
         )
         names = [r["name"] for r in candidates]
-        hn = self._hn(names, ttl)
+        domains = self._domains(names, ttl)
+        hn = self._hn(names, ttl, domains=domains)
         hiring = self._hiring(names, ttl)
         for r in rows:
+            r["domain"] = domains.get(r["name"])
             info = hn.get(r["name"])
             r["hn_points"] = info["points"] if info else None
             r["hn_stories"] = info["stories"] if info else None

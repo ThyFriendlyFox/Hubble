@@ -113,8 +113,21 @@ PHASES = [
         "status": "next",
         "note": "Everything here improves telescopes that already exist.",
         "items": [
-            {"name": "Kepler entity resolution", "done": False,
-             "detail": "resolve issuers to domains; replaces fuzzy HN name matching"},
+            {"name": "Kepler entity resolution", "done": True,
+             "detail": "a guessed '.com' domain per issuer, verified against the "
+                       "homepage's own <title> before being trusted — load-bearing, "
+                       "not a formality: verifying this live, a random real filer's "
+                       "guessed domain resolved to an unrelated squatted gambling "
+                       "site. When a domain resolves, HN attention switches from "
+                       "fuzzy title-text search to checking the story's own linked "
+                       "URL — a precision/recall trade, not a strict upgrade: it "
+                       "catches a company's own launch posts more reliably but "
+                       "misses third-party news coverage linking to a news site "
+                       "instead. Kepler takes that trade because a false 'no "
+                       "attention' costs nothing (renormalises away) while a false "
+                       "'attention found' is the exact failure this instrument "
+                       "exists to avoid. Only 12/220 issuers resolved a domain this "
+                       "sweep — most pre-launch filers simply have no live site yet"},
             {"name": "Kepler hiring signal", "done": True,
              "detail": "open-role counts from Greenhouse/Lever/Ashby, join key is a "
                        "guessed slug from the company name — not a real identifier "
