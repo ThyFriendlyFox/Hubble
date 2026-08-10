@@ -20,11 +20,12 @@ Jackson is a "where has the money moved" instrument, not a newswire.
 """
 import datetime as dt
 import re
+import traceback
 
 from telescope import Column, Signal, Telescope
 from telescope.events import ClimberRule, DeltaRule, NewEntrantRule, NewLeaderRule
 from telescope.http import post_json, try_json
-from telescope.registry import register
+from telescope.registry import get as get_telescope, is_enabled, register
 
 API = "https://api.usaspending.gov"
 CONTRACT_TYPES = ["A", "B", "C", "D"]  # definitive contracts + IDV orders
@@ -55,6 +56,28 @@ _NOISE_RE = re.compile(
 
 def _is_noise(name):
     return bool(_NOISE_RE.search(name or ""))
+
+
+# Keyword heuristic for "reads as defense/dual-use", used only to filter
+# Kepler's Form D feed for the UNMAPPED panel below. Deliberately broad
+# (dual-use terms, mission areas, service branches) because false positives
+# just mean an irrelevant row on a 25-row panel; false negatives mean a real
+# stealth defense raise never surfaces at all, which is the worse failure here.
+_DEFENSE_RE = re.compile(
+    r"(defense|defence|aerospace|aeronautic|munitions?|ballistic|missile"
+    r"|hypersonic|autonom(y|ous)|unmanned|\bdrone|\buas\b|\buav\b"
+    r"|satellite|space systems?|orbital|counter-?uas|counter-?drone"
+    r"|electronic warfare|\bew\b|cyber ?defense|cybersecurity"
+    r"|signals? intelligence|\bsigint\b|\bisr\b|surveillance|reconnaissance"
+    r"|naval|maritime defense|submarine|\bradar\b|directed energy"
+    r"|laser weapon|\barmor\b|ammunition|national security|homeland security"
+    r"|\barmy\b|\bnavy\b|air force|space force|dual.use|tactical)",
+    re.IGNORECASE,
+)
+
+
+def _is_defense_relevant(name, industry):
+    return bool(_DEFENSE_RE.search(f"{name or ''} {industry or ''}"))
 
 
 def _norm_company(name):
@@ -120,9 +143,14 @@ class Jackson(Telescope):
     glyph = "🛡"
     tagline = "DEFENSE INDUSTRIAL BASE INDEX"
     entity_label = "PRIMES"
-    sources_label = "USASPENDING · PSC TECH AREAS · SBIR"
+    sources_label = "USASPENDING · PSC TECH AREAS · SBIR · KEPLER (CROSS-REF)"
     caveat = ("Obligations, not announcements — USAspending lags awards by days "
-              "to weeks. Subcontract flows are not visible at the prime level.")
+              "to weeks. Subcontract flows are not visible at the prime level. "
+              "The board itself can only see companies that already hold a DoD "
+              "contract, which by definition excludes anything not yet on the "
+              "map; the UNMAPPED panel below cross-references Kepler's Form D "
+              "feed by keyword, which is a heuristic, not a verified defense "
+              "classification, and only appears while Kepler is enabled.")
 
     # Defense money moves on quarterly rhythms; no need to sweep hourly.
     cache_ttl = 12 * 3600
@@ -302,8 +330,18 @@ class Jackson(Telescope):
             })
         return rows
 
-    # ── secondary panel: where capability money is flowing ───────────────
+    # ── secondary panels: where money is flowing, and who isn't on the map yet
     def context(self, force=False):
+        panels = []
+        psc = self._psc_panel(force)
+        if psc:
+            panels.append(psc)
+        unmapped = self._unmapped_panel()
+        if unmapped:
+            panels.append(unmapped)
+        return panels or None
+
+    def _psc_panel(self, force=False):
         ttl = self.ttl(force)
         cur_start, cur_end = _window(12, 0)
         pri_start, pri_end = _window(24, 12)
@@ -339,4 +377,61 @@ class Jackson(Telescope):
                 {"field": "growth_pct", "label": "VS PRIOR 12M", "fmt": "pct"},
             ],
             "rows": rows,
+        }
+
+    def _unmapped_panel(self):
+        """Defense-relevant Form D filings from Kepler's stealth-raise feed.
+
+        Not a new source — a cross-telescope join. Jackson's own board can
+        only see companies that already hold a DoD contract; Kepler already
+        watches every Reg D filing in the country. This reads Kepler's
+        already-cached rows (never forces a refresh: Kepler's SEC pipeline
+        runs on its own cadence, and forcing it from here would mean loading
+        Jackson silently triggers a slow SEC EDGAR sweep) and keeps the ones
+        whose name or SEC industry code reads as defense/dual-use. It's a
+        keyword heuristic, not a verified classification, and it disappears
+        entirely if Kepler is turned off — see the caveat.
+        """
+        if not is_enabled("kepler"):
+            return None
+        try:
+            rows = get_telescope("kepler").collect(force=False)
+        except Exception:
+            traceback.print_exc()
+            return None
+
+        matches = [
+            r for r in rows
+            if not r.get("noise") and _is_defense_relevant(r.get("name"), r.get("industry"))
+        ]
+        if not matches:
+            return None
+        matches.sort(key=lambda r: r.get("raise_size") or 0, reverse=True)
+
+        rows_out = [
+            {
+                "name": r["name"],
+                "raise_fmt": r.get("raise_fmt"),
+                "raise_size": r.get("raise_size"),
+                "industry": r.get("industry"),
+                "state": r.get("state"),
+                "filed": r.get("filed"),
+                "stealth": "STEALTH" if r.get("stealth") else "—",
+            }
+            for r in matches[:25]
+        ]
+        return {
+            "title": "UNMAPPED · DEFENSE-ADJACENT STEALTH RAISES",
+            "subtitle": ("Recent SEC Form D filings, via Kepler, whose name or "
+                         "industry reads defense/dual-use — none of these carry "
+                         "a DoD obligation history above, which is the point"),
+            "columns": [
+                {"field": "name", "label": "COMPANY", "fmt": "text"},
+                {"field": "raise_fmt", "label": "RAISE", "fmt": "text"},
+                {"field": "industry", "label": "INDUSTRY", "fmt": "text"},
+                {"field": "state", "label": "ST", "fmt": "text"},
+                {"field": "filed", "label": "FILED", "fmt": "date"},
+                {"field": "stealth", "label": "FOOTPRINT", "fmt": "text"},
+            ],
+            "rows": rows_out,
         }

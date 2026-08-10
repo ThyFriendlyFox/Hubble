@@ -44,7 +44,7 @@ _Generated from `roadmap.py`, which also backs the dashboard's ROADMAP tab._
 - [ ] **Topic auto-discovery** — graduate from curated watchlist to embedding-cluster resolution
 - [ ] **Semantic Scholar key** — still blocked without one — its unauthenticated quota is a small pool shared globally by every unkeyed caller, confirmed not a proxy artifact by retrying locally with backoff
 
-## PHASE 3 · MAKING THE SIGNAL SHARPER  ·  `next`  (1/7)
+## PHASE 3 · MAKING THE SIGNAL SHARPER  ·  `next`  (2/8)
 
 > Everything here improves telescopes that already exist.
 
@@ -52,6 +52,7 @@ _Generated from `roadmap.py`, which also backs the dashboard's ROADMAP tab._
 - [ ] **Kepler hiring signal** — Greenhouse/Lever/Ashby board endpoints — the honest traction metric
 - [ ] **Jackson solicitations** — SAM.gov opportunities as a leading indicator ahead of obligations
 - [ ] **Jackson tech-area board** — promote the PSC panel into a rankable second board
+- [x] **Jackson · unmapped defense startups** — cross-telescope join, not a new source — Jackson's obligations board can only see companies that already hold a DoD contract; a new panel reads Kepler's already-cached Form D feed (never forces it to refresh) and keeps filings whose name or industry reads defense/dual-use, so a stealth raise with no contract history shows up before it's a prime. Keyword heuristic, not a verified classification, and only appears while Kepler is on. Needed a kernel change: telescope.panels() so a telescope can return more than one secondary board (Jackson now has two)
 - [ ] **Simons 13F whale tracking** — EDGAR 13F position deltas; 45-day lag stated on the row
 - [ ] **Backfill history** — seed snapshots from historical data so events fire on day one
 - [x] **Per-signal explanations** — hover a score to see raw value, normalised value, weight and point contribution per signal, plus why a row was dampened if it was — generic across all six telescopes

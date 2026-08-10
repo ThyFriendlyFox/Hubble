@@ -132,12 +132,10 @@ def test_snapshot_diff_roundtrip_emits_events(scope_rows):
         assert "{" not in e["headline"], f"unrendered template: {e['headline']}"
 
 
-def test_context_panel_is_wellformed(scope_rows):
+def test_context_panels_are_wellformed(scope_rows):
     scope, _ = scope_rows
-    panel = scope.context()
-    if panel is None:
-        return
-    assert panel["title"] and panel["columns"] and panel["rows"]
-    for col in panel["columns"]:
-        assert {"field", "label", "fmt"} <= set(col)
-        assert any(col["field"] in r for r in panel["rows"])
+    for panel in scope.panels():
+        assert panel["title"] and panel["columns"] and panel["rows"]
+        for col in panel["columns"]:
+            assert {"field", "label", "fmt"} <= set(col)
+            assert any(col["field"] in r for r in panel["rows"])

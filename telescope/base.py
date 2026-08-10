@@ -82,12 +82,25 @@ class Telescope:
         return []
 
     def context(self, force=False):
-        """Optional secondary panel data for domains where the ranked board
+        """Optional secondary panel(s) for domains where the ranked board
         isn't the whole story — tech-area spend for Jackson, the yield curve
-        for Simons. Returns {"title": str, "columns": [...], "rows": [...]}
-        or None. Must not raise; a failed panel shouldn't break the view.
+        for Simons. Returns a single {"title", "columns", "rows"} dict, a
+        list of them for telescopes with more than one, or None. May raise —
+        `panels()` is what callers use, and it never does.
         """
         return None
+
+    def panels(self, force=False):
+        """context(), normalised to a list and safe to call — a broken panel
+        shouldn't break the view."""
+        try:
+            raw = self.context(force=force)
+        except Exception:
+            traceback.print_exc()
+            return []
+        if not raw:
+            return []
+        return raw if isinstance(raw, list) else [raw]
 
     # ── inherited machinery ──────────────────────────────────────────────
     def ttl(self, force):
@@ -107,17 +120,13 @@ class Telescope:
         """The full payload the dashboard and API render from."""
         rows = self.collect(force=force)
         ranked = self.rank(rows, weights)
-        try:
-            panel = self.context(force=force)
-        except Exception:
-            traceback.print_exc()
-            panel = None
+        panels = self.panels(force=force)
         self._last_error = None
         return {
             "telescope": self.meta(),
             "rows": ranked,
             "count": len(ranked),
-            "panel": panel,
+            "panels": panels,
             "weights": {**self.default_weights, **(weights or {})},
             "ages": {k: self._age(k) for k in self.source_keys()},
         }

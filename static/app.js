@@ -10,7 +10,7 @@ let state = {
   slug: null,          // active telescope
   meta: null,          // active telescope metadata
   rows: [],
-  panel: null,
+  panels: [],
   weights: {},
   sort: { key: "rank", dir: 1 },
   search: "",
@@ -259,7 +259,7 @@ async function load(refresh = false) {
     }
     state.meta = data.telescope;
     state.rows = data.rows;
-    state.panel = data.panel;
+    state.panels = data.panels || [];
     if (!Object.keys(state.weights).length) {
       state.weights = data.weights;
       renderWeights();
@@ -419,23 +419,30 @@ function render() {
 }
 
 function renderPanel() {
-  const p = state.panel;
-  if (!p) { $("#panel-section").hidden = true; return; }
-  $("#panel-section").hidden = false;
-  $("#panel-title").textContent = p.title;
-  $("#panel-sub").textContent = p.subtitle || "";
-  $("#panel-head").innerHTML = p.columns
-    .map((c) => `<th class="${c.fmt === "text" ? "left" : ""}">${c.label}</th>`)
-    .join("");
-  $("#panel-rows").innerHTML = p.rows
-    .map(
-      (r) =>
-        "<tr>" +
-        p.columns
-          .map((c) => `<td class="${c.fmt === "text" ? "left" : ""}">${cell(r, c)}</td>`)
-          .join("") +
-        "</tr>"
-    )
+  const panels = state.panels || [];
+  $("#panels-container").innerHTML = panels
+    .map((p, i) => {
+      const head = p.columns
+        .map((c) => `<th class="${c.fmt === "text" ? "left" : ""}">${c.label}</th>`)
+        .join("");
+      const body = p.rows
+        .map(
+          (r) =>
+            "<tr>" +
+            p.columns
+              .map((c) => `<td class="${c.fmt === "text" ? "left" : ""}">${cell(r, c)}</td>`)
+              .join("") +
+            "</tr>"
+        )
+        .join("");
+      return `<section>
+        <div class="section-label"><span>${String(4 + i).padStart(2, "0")}</span> <em>${p.title}</em></div>
+        <div class="table-wrap">
+          <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
+        </div>
+        <div class="status">${p.subtitle || ""}</div>
+      </section>`;
+    })
     .join("");
 }
 

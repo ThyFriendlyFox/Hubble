@@ -109,6 +109,16 @@ PHASES = [
              "detail": "SAM.gov opportunities as a leading indicator ahead of obligations"},
             {"name": "Jackson tech-area board", "done": False,
              "detail": "promote the PSC panel into a rankable second board"},
+            {"name": "Jackson · unmapped defense startups", "done": True,
+             "detail": "cross-telescope join, not a new source — Jackson's obligations "
+                       "board can only see companies that already hold a DoD contract; "
+                       "a new panel reads Kepler's already-cached Form D feed (never "
+                       "forces it to refresh) and keeps filings whose name or industry "
+                       "reads defense/dual-use, so a stealth raise with no contract "
+                       "history shows up before it's a prime. Keyword heuristic, not a "
+                       "verified classification, and only appears while Kepler is on. "
+                       "Needed a kernel change: telescope.panels() so a telescope can "
+                       "return more than one secondary board (Jackson now has two)"},
             {"name": "Simons 13F whale tracking", "done": False,
              "detail": "EDGAR 13F position deltas; 45-day lag stated on the row"},
             {"name": "Backfill history", "done": False,
