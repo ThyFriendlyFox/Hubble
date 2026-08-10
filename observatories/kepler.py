@@ -452,7 +452,23 @@ class Kepler(Telescope):
                     out[name] = f"{slug}.com"
                 time.sleep(0.1)
             return out
-        return self.cache.cached("domains", ttl, go)
+
+        def totally_failed(result):
+            if result:
+                return False
+            # Most guesses are wrong by design (dead domain, no live site
+            # yet), so an empty result is the expected common case, not a
+            # failure signal on its own -- unlike Holmdel's per-topic
+            # sources, there's no aggregate "did anything come back" to
+            # check here, since a real success never adds an entry unless
+            # the guess is BOTH live AND verified as the right company.
+            # Probing a domain that's always up is what actually tells a
+            # real "all 40 guesses missed" apart from "our own DNS/network
+            # is down right now" -- only the latter should fall back to
+            # stale data instead of caching the empty sweep as truth.
+            return probe_text("https://google.com", timeout=6) is None
+
+        return self.cache.cached("domains", ttl, go, is_empty=totally_failed)
 
     def _hn(self, names, ttl, domains=None):
         """Public attention per issuer: story count and best score on HN.

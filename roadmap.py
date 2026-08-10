@@ -919,6 +919,41 @@ PHASES = [
                        "JS test framework, matching how every other "
                        "frontend-only fix this session was verified live "
                        "rather than via an automated test"},
+            {"name": "Kepler domains cache resilience via a canary probe",
+             "done": True,
+             "detail": "closes a gap explicitly left open when Jackson's and "
+                       "Kepler's other sources got is_empty guards: "
+                       "_domains() couldn't get the same blanket treatment "
+                       "because it's genuinely, legitimately near-empty most "
+                       "sweeps (12/220 issuers resolve a domain on a normal "
+                       "day) — forcing is_empty there would misread a correct "
+                       "'40 guesses missed' as a failure and freeze on stale "
+                       "data forever. The blocker was real but solvable: "
+                       "probe_text folds every failure mode (dead DNS, "
+                       "timeout, non-200) into the same None, so there was no "
+                       "way to tell 'the guesses were wrong' from 'our own "
+                       "network is down' from the result alone. Fixed with a "
+                       "canary: only when the sweep comes back empty, probe "
+                       "a domain that's always up (google.com) — if that "
+                       "also fails, it's a real outage worth falling back to "
+                       "stale data for; if it succeeds, an empty result "
+                       "really is just 40 wrong guesses, the expected common "
+                       "case, and should be cached as-is. Verified against "
+                       "real, current data in both directions: today's real "
+                       "sweep found the expected 12/220 real domains and "
+                       "correctly never invokes the canary at all (only "
+                       "checked when the result is empty); directly testing "
+                       "the predicate with the real network up confirmed an "
+                       "empty result reads as 'not a failure', and a "
+                       "simulated total outage (probe_text mocked to always "
+                       "fail) correctly flipped it to 'is a failure'. Also "
+                       "re-checked Semantic Scholar, which returned a "
+                       "genuine 200 once this iteration for the first time "
+                       "all session — confirmed a fluke, not a real "
+                       "unblocking, by retrying four more times immediately "
+                       "after: back to 429 every time, consistent with its "
+                       "documented tiny globally-shared unauthenticated "
+                       "quota rather than a persistent block that's lifted"},
         ],
     },
 ]
