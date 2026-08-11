@@ -2413,6 +2413,40 @@ PHASES = [
                        "second file in this sweep with nothing left over. "
                        "118 kernel tests + 94 domain-pack tests + 92 live "
                        "tests, all green"},
+            {"name": "Closed observatories/hubble.py to 100% — five of "
+                     "six domain packs now fully covered",
+             "done": True,
+             "detail": "fifth stop in the observatories/ sweep, and the "
+                       "smallest domain pack in the fleet (265 lines vs "
+                       "Kepler's 820 or Jackson's 628), so the gap was "
+                       "correspondingly narrower: _clean_price()'s "
+                       "negative-sentinel handling (OpenRouter uses values "
+                       "like -1000000 for variable/router pricing, which "
+                       "must read as 'unknown', not 'a real price near "
+                       "negative a million dollars per token') and "
+                       "fetch_openrouter()'s per-model join extraction — "
+                       "rank assignment by response order, pricing "
+                       "cleaned through that same sentinel guard, "
+                       "Artificial Analysis's intelligence/coding/agentic "
+                       "indices, and arena_elo as the max across every "
+                       "Design Arena entry for that model, all of it "
+                       "previously untested since a warm cache skips this "
+                       "producer the same way it skipped Kepler's and "
+                       "Holmdel's. 6 new tests closed every remaining "
+                       "line — collect()'s own join logic (merging "
+                       "HuggingFace and OpenRouter, adding HF-only models "
+                       "OpenRouter never saw) needed no additional direct "
+                       "test, since collect() isn't cache-gated the way "
+                       "the producers are and the live suite's real sweep "
+                       "already exercises it every run, confirmed by "
+                       "checking the combined coverage before adding "
+                       "anything further rather than assuming more tests "
+                       "were needed. Hubble: 80% -> 100%. "
+                       "observatories/ now stands at five of six domain "
+                       "packs fully covered (Kepler, Jackson, Holmdel, "
+                       "Simons, Hubble); only reddington.py (97%, a "
+                       "single line) remains. 118 kernel tests + 100 "
+                       "domain-pack tests + 92 live tests, all green"},
         ],
     },
 ]

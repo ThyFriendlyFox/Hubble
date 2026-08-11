@@ -8,7 +8,7 @@ system is), `TELESCOPES.md` (why the pattern is shaped this way) and
 
 Six telescopes run on live public data, no API keys. Kernel in `telescope/`,
 one domain pack per telescope in `observatories/`, one generic frontend driven
-entirely by telescope metadata. 118 kernel tests + 94 domain-pack tests +
+entirely by telescope metadata. 118 kernel tests + 100 domain-pack tests +
 92 live tests (all three suites grow as the build continues — check the
 actual count with `-q`, don't trust this number for long).
 
@@ -73,8 +73,13 @@ otherManager duplicate-CUSIP dedup), whale-move direction classification
 and its $10M noise floor, `_whale_move_events()`/`sweep()` (the same
 never-exercised event-firing shape Jackson's `_psc_events()` had), and the
 Hubble cross-telescope AI CAPEX WATCH join with its real date-matching
-arithmetic. `roadmap.py`'s own Phase 5 entries are the detailed log — this
-is only the shape of it.
+arithmetic. The Hubble telescope itself (the LLM index, not the AI CAPEX
+panel above) closed to 100% next — smallest domain pack in the fleet, its
+own price-cleaning (`_clean_price()`'s negative-sentinel handling) and
+OpenRouter join logic (rank/pricing/benchmark/arena-elo-max extraction)
+pinned directly; `observatories/` now has five of six domain packs at
+100%, only `reddington.py` (97%, one line) left. `roadmap.py`'s own Phase
+5 entries are the detailed log — this is only the shape of it.
 
 Work is on branch `claude/telescope-dashboard-concept-lo1ay8`, open as **PR #1**.
 Pushing to that branch updates the PR — do not open a new one.

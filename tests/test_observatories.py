@@ -22,8 +22,9 @@ import datetime as dt                                             # noqa: E402
 import shutil                                                     # noqa: E402
 from unittest.mock import patch                                  # noqa: E402
 
-from observatories import holmdel, jackson, kepler, simons        # noqa: E402
+from observatories import holmdel, hubble, jackson, kepler, simons  # noqa: E402
 from observatories.holmdel import Holmdel, Topic, _growth         # noqa: E402
+from observatories.hubble import Hubble, _clean_price, _price_str  # noqa: E402
 from observatories.jackson import Jackson                         # noqa: E402
 from observatories.kepler import (Kepler, _core_name,             # noqa: E402
                                   _distinctive_enough,
@@ -1512,5 +1513,107 @@ def test_ai_capex_panel_pairs_a_new_leader_event_with_smhs_move_since():
         assert row["smh_then"] == 100.0
         assert row["smh_now"] == 150.0
         assert row["chg_pct"] == 50.0
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# HUBBLE
+# ═══════════════════════════════════════════════════════════════════════
+def _isolated_hubble():
+    hub = Hubble()
+    tmp = tempfile.mkdtemp()
+    hub.cache.dir = tmp
+    return hub, tmp
+
+
+# ── _clean_price() / _price_str(): pure formatting logic ────────────────
+def test_clean_price_treats_a_negative_sentinel_as_unknown():
+    """OpenRouter uses negative sentinels like -1000000 for variable/router
+    pricing -- treating that as a real price would skew normalisation
+    toward "impossibly cheap" instead of "unknown"."""
+    assert _clean_price(-1000000) is None
+    assert _clean_price(None) is None
+
+
+def test_clean_price_passes_through_a_real_non_negative_value():
+    assert _clean_price("0.0000025") == 0.0000025
+    assert _clean_price(0) == 0.0   # zero itself is a real, valid price
+
+
+def test_price_str_formats_per_million_tokens():
+    assert _price_str(0.0000025) == "$2.50"
+    assert _price_str(None) == "$0.00"
+
+
+# ── fetch_huggingface(): id fallback and missing-field defaults ─────────
+def test_fetch_huggingface_falls_back_to_modelId_and_defaults_missing_fields():
+    data = [
+        {"id": "org/model-a", "downloads": 500, "likes": 10, "createdAt": "2026-01-01"},
+        {"modelId": "org/model-b"},   # no "id", no downloads/likes at all
+    ]
+    hub, tmp = _isolated_hubble()
+    try:
+        with patch.object(hubble, "try_json", return_value=data):
+            out = hub.fetch_huggingface(3600)
+        assert out[0] == {"hf_id": "org/model-a", "downloads": 500, "likes": 10,
+                          "created_at": "2026-01-01"}
+        assert out[1] == {"hf_id": "org/model-b", "downloads": 0, "likes": 0,
+                          "created_at": None}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── fetch_openrouter(): rank, pricing, benchmark and arena-elo extraction
+def test_fetch_openrouter_extracts_rank_pricing_and_benchmarks():
+    data = {"data": [
+        {
+            "id": "openrouter/model-a", "name": "Model A",
+            "hugging_face_id": "org/model-a",
+            "context_length": 128000,
+            "pricing": {"prompt": "0.000001", "completion": "0.000003"},
+            "benchmarks": {
+                "artificial_analysis": {
+                    "intelligence_index": 55, "coding_index": 60, "agentic_index": 40,
+                },
+                "design_arena": [{"elo": 1200}, {"elo": 1350}],
+            },
+        },
+        {"id": "openrouter/model-b", "name": "Model B"},   # sparse: no pricing/benchmarks/hf id
+    ]}
+    hub, tmp = _isolated_hubble()
+    try:
+        with patch.object(hubble, "try_json", return_value=data):
+            out = hub.fetch_openrouter(3600)
+        first, second = out
+        assert first["usage_rank"] == 1
+        assert first["hf_id"] == "org/model-a"
+        assert first["price_prompt"] == 0.000001
+        assert first["price_completion"] == 0.000003
+        assert first["intelligence_index"] == 55
+        assert first["coding_index"] == 60
+        assert first["agentic_index"] == 40
+        assert first["arena_elo"] == 1350   # the max of the two design_arena entries
+
+        assert second["usage_rank"] == 2
+        assert second["hf_id"] is None
+        assert second["price_prompt"] is None
+        assert second["intelligence_index"] is None
+        assert second["arena_elo"] is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_fetch_openrouter_cleans_a_negative_price_sentinel_within_the_join():
+    data = {"data": [{
+        "id": "openrouter/model-a", "name": "Model A",
+        "pricing": {"prompt": -1000000, "completion": "0.000003"},
+    }]}
+    hub, tmp = _isolated_hubble()
+    try:
+        with patch.object(hubble, "try_json", return_value=data):
+            out = hub.fetch_openrouter(3600)
+        assert out[0]["price_prompt"] is None
+        assert out[0]["price_completion"] == 0.000003
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
