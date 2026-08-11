@@ -8,7 +8,7 @@ system is), `TELESCOPES.md` (why the pattern is shaped this way) and
 
 Six telescopes run on live public data, no API keys. Kernel in `telescope/`,
 one domain pack per telescope in `observatories/`, one generic frontend driven
-entirely by telescope metadata. 109 kernel tests + 86 live tests (both suites
+entirely by telescope metadata. 117 kernel tests + 86 live tests (both suites
 grow as the build continues — check the actual count with `-q`, don't trust
 this number for long).
 
@@ -33,8 +33,15 @@ below (`xml_tag`, `to_float`, a `NewEntrantRule` kernel extension), and — most
 recently — a full pass making three telescopes' secondary panels (Simons'
 WHALE MOVES, Kepler's stealth detection, Jackson's CAPABILITY AREAS) actually
 fire the real feed events `TELESCOPES.md` designed them to, which none of
-them had ever done. `roadmap.py`'s own Phase 5 entries are the detailed
-log — this is only the shape of it.
+them had ever done, and a multi-iteration coverage.py-guided sweep (installed
+locally each time for verification only, never added as a dependency) that
+took every file in `telescope/` from unmeasured to individually audited —
+7 of 11 now sit at 100%, the package as a whole at ~92%, and every remaining
+gap is a deliberately-judged omission (an optional dependency not installed,
+a rare double-failure edge case, or genuinely network-bound adapter code
+already covered by `test_live.py` instead) rather than an oversight.
+`roadmap.py`'s own Phase 5 entries are the detailed log — this is only the
+shape of it.
 
 Work is on branch `claude/telescope-dashboard-concept-lo1ay8`, open as **PR #1**.
 Pushing to that branch updates the PR — do not open a new one.

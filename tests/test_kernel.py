@@ -23,7 +23,7 @@ from telescope.cache import Cache                                # noqa: E402
 from telescope.parse import to_float                             # noqa: E402
 from telescope.events import (ClimberRule, CrossoverRule, DeltaRule,  # noqa: E402
                               FlagFlipRule, NewEntrantRule, NewLeaderRule,
-                              ThresholdRule)
+                              ThresholdRule, money)
 from telescope.ranking import Signal                             # noqa: E402
 from telescope.series import (Series, analyse, change,               # noqa: E402
                               fetch_panel, historical_panel)
@@ -52,6 +52,20 @@ def test_normalise_all_none():
 
 def test_normalise_identical_values_does_not_divide_by_zero():
     assert ranking.normalise([7, 7, 7]) == [0.0, 0.0, 0.0]
+
+
+def test_normalise_log_scales_before_mapping_to_0_100():
+    """Several real telescopes declare log=True signals for heavy-tailed
+    counts (Kepler's raise size, Jackson's obligations) -- normalise()'s
+    own log-scaling branch had never been exercised by a kernel test,
+    found via coverage.py."""
+    out = ranking.normalise([1, 10, 100], log=True)
+    assert out[0] == 0.0
+    assert out[2] == 100.0
+    # A log-scaled midpoint sits well below where the linear midpoint
+    # would -- confirms the log transform actually ran, not a
+    # coincidentally-passing linear scale.
+    assert out[1] < 50.0
 
 
 def test_lower_is_better_inverts():
@@ -208,6 +222,72 @@ def test_threshold_rule_detects_both_crossings():
     assert rule.row({"v": 0.1}, {**row, "v": -0.1}, 0)[0]["headline"] == "down under 0.0"
     assert rule.row({"v": 0.1}, {**row, "v": 0.2}, 0) == []   # no crossing
     assert rule.row(None, {**row, "v": 0.2}, 0) == []         # nothing to cross from
+
+
+def test_threshold_rule_no_crossing_when_the_field_is_missing():
+    """Distinct from 'nothing to cross from' (prev is None entirely) above
+    -- prev exists but doesn't carry this field, e.g. a telescope adding a
+    new gauge mid-run. Found via coverage.py."""
+    rule = ThresholdRule(field="v", level=0.0)
+    assert rule.row({"other": 1}, {"name": "n", "v": 0.2}, 0) == []
+
+
+def test_new_leader_board_returns_nothing_when_no_one_holds_rank_1():
+    """Distinct from 'the same leader as before' (already tested) --
+    curr_rows might have no rank-1 row at all (e.g. every row got
+    filtered to noise). Found via coverage.py."""
+    rule = NewLeaderRule()
+    assert rule.board([{"key": "a", "rank": 1}], [{"key": "b", "rank": 2}], 0) == []
+
+
+def test_board_is_a_no_op_for_every_row_only_rule():
+    """ClimberRule/ThresholdRule/CrossoverRule/FlagFlipRule only ever fire
+    from row(); their board() is an intentional no-op stub -- never
+    directly confirmed by any test, found via coverage.py."""
+    for rule in (ClimberRule(), ThresholdRule(), CrossoverRule(), FlagFlipRule()):
+        assert rule.board([{"key": "a", "rank": 1}], [{"key": "a", "rank": 2}], 0) == []
+
+
+def test_climber_row_returns_nothing_without_a_real_prior_rank():
+    """Distinct from 'moved but not enough' (already tested) -- a genuinely
+    new entrant (prev=None) or a row missing rank entirely can't have a
+    rank delta computed at all. Found via coverage.py."""
+    rule = ClimberRule(rank_delta=10, score_delta=5.0)
+    curr = {"name": "n", "rank": 5, "score": 1}
+    assert rule.row(None, curr, 0) == []
+    assert rule.row({"score": 1}, curr, 0) == []            # prev has no rank
+    assert rule.row({"rank": 20, "score": 1}, {"name": "n", "score": 1}, 0) == []  # curr has no rank
+
+
+def test_delta_rule_row_returns_nothing_without_a_real_prior_or_current_value():
+    """Distinct from 'moved but not enough' (already tested) -- a genuinely
+    new entrant (prev=None), a zero/missing prior value (can't compute a
+    fraction against it), or a missing current value. Found via
+    coverage.py."""
+    rule = DeltaRule(field="p", direction="down", frac=0.25)
+    curr = {"name": "n", "p": 50}
+    assert rule.row(None, curr, 0) == []
+    assert rule.row({"p": 0}, curr, 0) == []            # can't fraction against zero
+    assert rule.row({"p": 100}, {"name": "n"}, 0) == []   # curr missing the field
+
+
+def test_delta_rule_either_direction_ignores_a_small_move():
+    """test_delta_rule_up_and_either already confirms 'either' fires on a
+    real move in both directions; this is the other half -- a move too
+    small in either direction must not fire. Found via coverage.py."""
+    rule = DeltaRule(field="p", direction="either", frac=0.25)
+    assert rule.row({"p": 100}, {"name": "n", "p": 105}, 0) == []
+
+
+def test_delta_rule_uses_a_custom_formatter_when_given_one():
+    """money() is documented as shared because three domain packs
+    independently needed it for exactly this -- DeltaRule with a real
+    custom formatter had never actually been exercised, only the default
+    numeric rendering. Found via coverage.py."""
+    rule = DeltaRule(field="p", direction="up", frac=0.25, formatter=money,
+                     headline="{name}: {old_fmt} -> {new_fmt}")
+    events = rule.row({"p": 1_000_000}, {"name": "n", "p": 2_000_000}, 0)
+    assert events[0]["headline"] == "n: $1.0M -> $2.0M"
 
 
 # ── cache resilience ─────────────────────────────────────────────────────
