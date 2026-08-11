@@ -12,7 +12,7 @@ import requests
 # still appear in the dashboard feed but don't spam a timeline.
 SOCIAL_TYPES = {
     "new_leader", "new_model", "new_entrant", "stealth_raise",
-    "faint_signal", "regime_change", "big_award",
+    "faint_signal", "regime_change", "big_award", "whale_move",
 }
 
 

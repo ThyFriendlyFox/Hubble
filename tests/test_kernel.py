@@ -372,6 +372,23 @@ def test_load_events_respects_since_and_limit_and_stays_newest_first():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_append_events_is_the_public_counterpart_to_record():
+    """append_events() exists for a domain pack that detects real events
+    outside the normal per-sweep row diff -- Simons' 13F whale-move
+    detection is the first case: those events come from comparing two SEC
+    filings, not two ranked snapshots, so record()'s diff() doesn't apply,
+    but the events still need to land in the same events.json record() itself
+    writes to."""
+    store, tmp = _isolated_store()
+    try:
+        store.append_events([{"ts": 100, "type": "whale_move"}])
+        assert store.load_events() == [{"ts": 100, "type": "whale_move"}]
+        store.append_events([])   # a no-op, not a crash
+        assert store.load_events() == [{"ts": 100, "type": "whale_move"}]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 # ── backfill ─────────────────────────────────────────────────────────────
 def _isolated_scope(cls):
     """Instantiate a test Telescope with its cache/store redirected to a

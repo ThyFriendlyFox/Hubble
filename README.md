@@ -46,7 +46,9 @@ laptop or light the whole observatory on a server. Toggle state persists to
   and the feed announces regime crossings. A secondary **WHALE MOVES** panel
   tracks quarter-over-quarter 13F position deltas across a curated list of
   large filers — positioning from months ago (13F-HR is due 45 days after
-  quarter end), not now, and the caveat says so. A second panel, **AI CAPEX
+  quarter end), not now, and the caveat says so. A qualifying delta also
+  fires a real feed event the first time a new filing produces one, not
+  just a passive panel entry. A second panel, **AI CAPEX
   WATCH**, pairs Hubble's new-leader events with how SMH (semiconductors)
   moved since — a loose observational correlation, not a signal.
 - **Holmdel** — idea velocity across a curated watchlist, ranked on

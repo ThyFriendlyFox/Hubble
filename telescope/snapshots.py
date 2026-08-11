@@ -97,6 +97,19 @@ class SnapshotStore:
             json.dump(combined, fh)
         os.replace(tmp, self.events_file)
 
+    def append_events(self, events):
+        """Public counterpart to record()'s internal _append_events(), for a
+        domain pack that detects real events outside the normal per-sweep
+        row diff -- Simons' 13F whale-move detection is the first case:
+        those events come from comparing two SEC filings, not two ranked
+        snapshots, so record()'s diff() machinery doesn't apply, but the
+        events still belong in the same feed/notifier pipeline as everything
+        else. Thread-safe the same way record() is."""
+        if not events:
+            return
+        with self._lock:
+            self._append_events(events)
+
     # ── diff ─────────────────────────────────────────────────────────────
     def diff(self, prev, curr_rows, ts):
         if not prev:

@@ -51,6 +51,14 @@ first. This is a curated watchlist of large, well-known filers, not the full
 universe of 13F filers (thousands) — the same tradeoff Holmdel makes with its
 topic list, for the same reason: a hand-picked universe you can actually
 reason about beats a firehose you can't.
+
+A qualifying delta also now fires a real `whale_move` feed event (and, if
+configured, a social post) the first time each new quarterly filing produces
+one — previously the WHALE MOVES panel was purely passive, visible only to
+someone who happened to open the board, which didn't live up to this whole
+project's own principle that every telescope must keep history and speak in
+events. Persisted per (fund, security, filing) so the same immutable filing
+never re-announces itself on a later sweep.
 """
 import datetime as dt
 import re
@@ -386,9 +394,79 @@ class Simons(Telescope):
                     "recent_value": r["value"],
                     "change": delta,
                     "direction": direction,
+                    # Carried for _whale_move_events()'s seen-tracking, not
+                    # rendered as panel columns -- a filing's positions are
+                    # immutable once filed (see the caching comment above),
+                    # so (cik, cusip, accession) is a stable identity for
+                    # "this exact delta, from this exact filing".
+                    "cik": cik,
+                    "cusip": cusip,
+                    "accession": recent_acc["accession"],
                 })
         moves.sort(key=lambda m: abs(m["change"]), reverse=True)
         return moves[:WHALE_TOP_N], as_of
+
+    def _whale_move_events(self, moves):
+        """Turn qualifying 13F deltas into real feed events, not just a
+        panel entry. TELESCOPES.md's own design for Simons named
+        `whale_move` (a 13F delta above threshold) as a first-class event
+        alongside `regime_change` -- until now only regime_change actually
+        fired one; a whale's position doubling or a full exit was only ever
+        visible to someone who happened to open the WHALE MOVES panel,
+        which contradicts this whole project's stated principle that every
+        telescope must keep history and speak in events.
+
+        Persists which (cik, cusip, accession) combos have already been
+        announced, so a filing's immutable positions only ever fire once --
+        on the sweep where a genuinely new quarterly 13F-HR first appears
+        with a qualifying delta, not on every later sweep that re-reads the
+        same cached filing.
+        """
+        if not moves:
+            return []
+        seen = self.cache.get("whale_events_seen", 10 ** 9) or {}
+        new_seen = dict(seen)
+        ts = time.time()
+        events = []
+        for m in moves:
+            key = f"{m['cik']}:{m['cusip']}:{m['accession']}"
+            if key in seen:
+                continue
+            new_seen[key] = True
+            events.append({
+                "type": "whale_move",
+                "key": f"{m['cik']}:{m['cusip']}",
+                "name": f"{m['fund']} · {m['security']}",
+                "ts": ts,
+                "headline": (
+                    f"🐋 {m['fund']} {m['direction'].lower()} {m['security']} "
+                    f"by {money(abs(m['change']))} (now "
+                    f"{money(m['recent_value'])})."
+                ),
+                "telescope": self.slug,
+            })
+        self.cache.set("whale_events_seen", new_seen)
+        return events
+
+    def sweep(self, notifier=None):
+        """Adds whale-move events on top of the normal board sweep -- these
+        come from comparing two SEC filings, a different shape than the
+        ranked-row diff record() does, so they're detected and dispatched
+        here rather than forced through diff() machinery that doesn't fit
+        them. _whale_moves(force=False) is intentional, not a bug: 13F
+        positions are immutable once filed (see the caching comment on
+        _whale_moves), so there is nothing to force -- a manual refresh
+        re-downloading the same multi-MB historical document would be pure
+        waste, not fresher data.
+        """
+        events = super().sweep(notifier)
+        moves, _ = self._whale_moves(force=False)
+        whale_events = self._whale_move_events(moves)
+        if whale_events:
+            self.store.append_events(whale_events)
+            if notifier:
+                notifier.dispatch(whale_events, self)
+        return events + whale_events
 
     def _whale_panel(self, force=False):
         moves, as_of = self._whale_moves(force)
