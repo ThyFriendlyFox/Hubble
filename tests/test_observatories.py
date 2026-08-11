@@ -18,15 +18,17 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import datetime as dt                                             # noqa: E402
 import shutil                                                     # noqa: E402
 from unittest.mock import patch                                  # noqa: E402
 
-from observatories import holmdel, jackson, kepler                # noqa: E402
+from observatories import holmdel, jackson, kepler, simons        # noqa: E402
 from observatories.holmdel import Holmdel, Topic, _growth         # noqa: E402
 from observatories.jackson import Jackson                         # noqa: E402
 from observatories.kepler import (Kepler, _core_name,             # noqa: E402
                                   _distinctive_enough,
                                   _looks_like_the_company, _slug)
+from observatories.simons import Simons                           # noqa: E402
 
 
 def _isolated_kepler():
@@ -1041,5 +1043,474 @@ def test_context_is_none_when_every_topic_is_currently_noise():
             panels = hol.context(force=True)
         assert panels is None
         assert calls == []   # _unlisted_panel never even got called
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# SIMONS
+# ═══════════════════════════════════════════════════════════════════════
+def _isolated_simons():
+    sim = Simons()
+    tmp = tempfile.mkdtemp()
+    sim.cache.dir = tmp
+    sim.store.dir = os.path.join(tmp, "history")
+    sim.store.events_file = os.path.join(tmp, "events.json")
+    os.makedirs(sim.store.dir, exist_ok=True)
+    return sim, tmp
+
+
+# ── _positions(): 13F XML parsing, and the real Berkshire dedup case ────
+def test_positions_returns_empty_dict_when_fetch_fails():
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "try_text", return_value=None):
+            assert sim._positions("https://x") == {}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_positions_extracts_cusip_name_and_value():
+    xml = ("<informationTable><infoTable><nameOfIssuer>Widgetco Inc</nameOfIssuer>"
+           "<cusip>123456789</cusip><value>50000</value></infoTable></informationTable>")
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "try_text", return_value=xml):
+            out = sim._positions("https://x")
+        assert out == {"123456789": {"name": "Widgetco Inc", "value": 50000.0}}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_positions_sums_duplicate_cusips_across_manager_rows():
+    """A real, confirmed case, not a hypothetical: Berkshire splits one
+    security across several otherManager subsidiary rows for the SAME
+    security. Summing by CUSIP within one filing must happen before any
+    quarter-over-quarter comparison, or the position gets double-counted."""
+    xml = ("<informationTable>"
+           "<infoTable><nameOfIssuer>Widgetco Inc</nameOfIssuer><cusip>123456789</cusip><value>30000</value></infoTable>"
+           "<infoTable><nameOfIssuer>Widgetco Inc</nameOfIssuer><cusip>123456789</cusip><value>20000</value></infoTable>"
+           "</informationTable>")
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "try_text", return_value=xml):
+            out = sim._positions("https://x")
+        assert out == {"123456789": {"name": "Widgetco Inc", "value": 50000.0}}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_positions_skips_a_block_with_no_cusip():
+    xml = ("<informationTable><infoTable><nameOfIssuer>No Cusip Co</nameOfIssuer>"
+           "<value>10000</value></infoTable></informationTable>")
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "try_text", return_value=xml):
+            assert sim._positions("https://x") == {}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── _curve_panel(): rates aggregation from already-cached series ────────
+def test_curve_panel_skips_a_tenor_key_absent_from_SERIES():
+    """Structurally can't happen today -- the hardcoded tenors list and
+    SERIES are kept in sync by hand -- but the guard exists for exactly the
+    case where they drift, so it's worth pinning directly rather than
+    trusting they'll always agree."""
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "SERIES", tuple(
+            s for s in simons.SERIES if s.key != "dff"
+        )), patch.object(sim.cache, "get", return_value=[("2026-01-01", 4.0),
+                                                          ("2026-06-01", 4.5)]):
+            panel = sim._curve_panel(force=True)
+        assert panel is not None
+        assert all(r["tenor"] != "Fed Funds" for r in panel["rows"])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_curve_panel_is_none_when_no_tenor_has_cached_data():
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(sim.cache, "get", return_value=None):
+            assert sim._curve_panel(force=True) is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_curve_panel_computes_level_and_change_from_cached_series():
+    pts = [(f"2026-01-{(i % 28) + 1:02d}", 4.0) for i in range(252)] + [("2026-12-31", 4.5)]
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(sim.cache, "get", return_value=pts):
+            panel = sim._curve_panel(force=True)
+        assert panel is not None
+        row = panel["rows"][0]
+        assert row["level"] == 4.5
+        assert row["chg_1m"] == 50.0   # (4.5 - 4.0) * 100, basis points
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── _accessions(): the two most recent 13F-HR filings ────────────────────
+def test_accessions_returns_empty_when_fetch_fails():
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "try_json", return_value=None):
+            assert sim._accessions("0001234567", 3600) == []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_accessions_extracts_the_two_most_recent_13fhr_filings():
+    data = {"filings": {"recent": {
+        "form": ["10-K", "13F-HR", "13F-HR", "13F-HR"],
+        "accessionNumber": ["A0", "A1", "A2", "A3"],
+        "reportDate": ["2026-01-01", "2026-06-30", "2026-03-31", "2025-12-31"],
+    }}}
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "try_json", return_value=data):
+            out = sim._accessions("0001234567", 3600)
+        assert out == [
+            {"accession": "A1", "report_date": "2026-06-30"},
+            {"accession": "A2", "report_date": "2026-03-31"},
+        ]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── _info_table_url(): the filer-chosen XML filename lookup ─────────────
+def test_info_table_url_returns_none_when_index_fetch_fails():
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "try_json", return_value=None):
+            assert sim._info_table_url("1234567", "0001234567-26-000001") is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_info_table_url_finds_the_filers_own_named_xml():
+    idx = {"directory": {"item": [
+        {"name": "primary_doc.xml"},
+        {"name": "form13fInfoTable.xml"},
+        {"name": "0001234567-26-000001-index.htm"},
+    ]}}
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "try_json", return_value=idx):
+            url = sim._info_table_url("1234567", "0001234567-26-000001")
+        assert url == ("https://www.sec.gov/Archives/edgar/data/1234567/"
+                       "000123456726000001/form13fInfoTable.xml")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_info_table_url_returns_none_when_only_primary_doc_present():
+    idx = {"directory": {"item": [{"name": "primary_doc.xml"}]}}
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "try_json", return_value=idx):
+            assert sim._info_table_url("1234567", "0001234567-26-000001") is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── _whale_moves(): the direction classification and min-change floor ───
+def test_whale_moves_skips_a_filer_with_fewer_than_two_accessions():
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(sim, "_accessions",
+                          return_value=[{"accession": "A1", "report_date": "2026-06-30"}]):
+            moves, as_of = sim._whale_moves(force=True)
+        assert moves == []
+        assert as_of is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_whale_moves_classifies_new_exited_increased_decreased():
+    accns = [
+        {"accession": "A1", "report_date": "2026-06-30"},
+        {"accession": "A0", "report_date": "2026-03-31"},
+    ]
+    recent = {
+        "NEWCUSIP0": {"name": "New Co", "value": 20_000_000.0},
+        "INCCUSIP0": {"name": "Inc Co", "value": 80_000_000.0},
+        "DECCUSIP0": {"name": "Dec Co", "value": 10_000_000.0},
+    }
+    prior = {
+        "INCCUSIP0": {"name": "Inc Co", "value": 50_000_000.0},
+        "DECCUSIP0": {"name": "Dec Co", "value": 40_000_000.0},
+        "EXTCUSIP0": {"name": "Exit Co", "value": 15_000_000.0},
+    }
+
+    def fake_positions(url):
+        return recent if url == "recent-url" else prior
+
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "WHALES", (("Test Fund", "0001234567"),)), \
+             patch.object(sim, "_accessions", return_value=accns), \
+             patch.object(sim, "_info_table_url",
+                          side_effect=lambda cik, acc: "recent-url" if acc == "A1" else "prior-url"), \
+             patch.object(sim, "_positions", side_effect=fake_positions), \
+             patch("time.sleep"):
+            moves, as_of = sim._whale_moves(force=True)
+        by_cusip = {m["cusip"]: m for m in moves}
+        assert by_cusip["NEWCUSIP0"]["direction"] == "NEW"
+        assert by_cusip["INCCUSIP0"]["direction"] == "INCREASED"
+        assert by_cusip["DECCUSIP0"]["direction"] == "DECREASED"
+        assert by_cusip["EXTCUSIP0"]["direction"] == "EXITED"
+        assert as_of == "2026-06-30"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_whale_moves_filters_deltas_under_the_10m_floor():
+    accns = [
+        {"accession": "A1", "report_date": "2026-06-30"},
+        {"accession": "A0", "report_date": "2026-03-31"},
+    ]
+    recent = {"SMALLCUSIP": {"name": "Small Co", "value": 5_000_000.0}}
+    prior = {"SMALLCUSIP": {"name": "Small Co", "value": 0.0}}
+
+    def fake_positions(url):
+        return recent if url == "recent-url" else prior
+
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "WHALES", (("Test Fund", "0001234567"),)), \
+             patch.object(sim, "_accessions", return_value=accns), \
+             patch.object(sim, "_info_table_url",
+                          side_effect=lambda cik, acc: "recent-url" if acc == "A1" else "prior-url"), \
+             patch.object(sim, "_positions", side_effect=fake_positions), \
+             patch("time.sleep"):
+            moves, _ = sim._whale_moves(force=True)
+        assert moves == []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── _whale_move_events(): fires once, never re-announces the same filing ─
+def test_whale_move_events_on_empty_moves_fires_nothing():
+    sim, tmp = _isolated_simons()
+    try:
+        assert sim._whale_move_events([]) == []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_whale_move_events_fires_once_and_never_reannounces_the_same_filing():
+    move = {"fund": "Test Fund", "security": "Widgetco", "cik": "0001234567",
+            "cusip": "123456789", "accession": "A1", "change": 30_000_000.0,
+            "recent_value": 80_000_000.0, "direction": "INCREASED"}
+    sim, tmp = _isolated_simons()
+    try:
+        first = sim._whale_move_events([move])
+        assert len(first) == 1
+        assert first[0]["type"] == "whale_move"
+        assert "Widgetco" in first[0]["headline"]
+        second = sim._whale_move_events([move])
+        assert second == []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── sweep(): Simons' own override, layering whale events on the base sweep
+def test_sweep_appends_and_dispatches_whale_events_on_top_of_the_base_sweep():
+    sim, tmp = _isolated_simons()
+    base_event = {"type": "regime_change", "key": "t10y2y", "name": "2s10s Curve",
+                  "ts": 0, "telescope": "simons", "headline": "base event"}
+    whale_event = {"type": "whale_move", "key": "0001234567:123456789",
+                   "name": "Test Fund · Widgetco", "ts": 0,
+                   "telescope": "simons", "headline": "whale event"}
+    dispatched = []
+
+    class FakeNotifier:
+        def dispatch(self, events, scope):
+            dispatched.append(list(events))
+
+    try:
+        with patch.object(simons.Telescope, "sweep", return_value=[base_event]), \
+             patch.object(sim, "_whale_moves", return_value=([{"cik": "x"}], "2026-06-30")), \
+             patch.object(sim, "_whale_move_events", return_value=[whale_event]):
+            events = sim.sweep(notifier=FakeNotifier())
+        assert events == [base_event, whale_event]
+        stored = sim.store.load_events(limit=10)
+        assert any(e["type"] == "whale_move" for e in stored)
+        assert dispatched == [[whale_event]]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_sweep_does_not_append_or_dispatch_when_no_whale_events_fire():
+    sim, tmp = _isolated_simons()
+    base_event = {"type": "regime_change", "key": "t10y2y", "name": "2s10s Curve",
+                  "ts": 0, "telescope": "simons", "headline": "base event"}
+    dispatched = []
+
+    class FakeNotifier:
+        def dispatch(self, events, scope):
+            dispatched.append(list(events))
+
+    try:
+        with patch.object(simons.Telescope, "sweep", return_value=[base_event]), \
+             patch.object(sim, "_whale_moves", return_value=([], None)), \
+             patch.object(sim, "_whale_move_events", return_value=[]):
+            events = sim.sweep(notifier=FakeNotifier())
+        assert events == [base_event]
+        assert sim.store.load_events(limit=10) == []
+        assert dispatched == []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── _whale_panel() ────────────────────────────────────────────────────
+def test_whale_panel_is_none_when_no_moves():
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(sim, "_whale_moves", return_value=([], None)):
+            assert sim._whale_panel(force=True) is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_whale_panel_builds_rows_from_real_moves():
+    move = {"cik": "0001234567", "cusip": "123456789", "fund": "Test Fund",
+            "security": "Widgetco", "prior_value": 50_000_000.0,
+            "recent_value": 80_000_000.0, "change": 30_000_000.0,
+            "direction": "INCREASED", "accession": "A1"}
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(sim, "_whale_moves", return_value=([move], "2026-06-30")):
+            panel = sim._whale_panel(force=True)
+        assert panel is not None
+        assert panel["rows"][0]["key"] == "0001234567:123456789"
+        assert "2026-06-30" in panel["subtitle"]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── _ai_capex_panel(): the Hubble cross-telescope join ───────────────────
+def test_ai_capex_panel_is_none_when_hubble_is_disabled():
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "is_enabled", return_value=False):
+            assert sim._ai_capex_panel(force=True) is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_ai_capex_panel_swallows_a_broken_hubble_read():
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "is_enabled", return_value=True), \
+             patch.object(simons, "get_telescope", side_effect=Exception("boom")):
+            assert sim._ai_capex_panel(force=True) is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_ai_capex_panel_is_none_without_any_new_leader_events():
+    class FakeStore:
+        def load_events(self, limit=200):
+            return [{"type": "big_award", "ts": 1, "name": "x"}]
+
+    class FakeHubble:
+        store = FakeStore()
+
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "is_enabled", return_value=True), \
+             patch.object(simons, "get_telescope", return_value=FakeHubble()):
+            assert sim._ai_capex_panel(force=True) is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_ai_capex_panel_is_none_without_enough_smh_price_history():
+    class FakeStore:
+        def load_events(self, limit=200):
+            return [{"type": "new_leader", "ts": 1700000000, "name": "GPT-X"}]
+
+    class FakeHubble:
+        store = FakeStore()
+
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "is_enabled", return_value=True), \
+             patch.object(simons, "get_telescope", return_value=FakeHubble()), \
+             patch.object(sim.cache, "get", return_value=[("2023-11-14", 100.0)]):
+            assert sim._ai_capex_panel(force=True) is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_ai_capex_panel_skips_a_leader_event_missing_ts_or_name():
+    class FakeStore:
+        def load_events(self, limit=200):
+            return [{"type": "new_leader", "ts": None, "name": "GPT-X"}]
+
+    class FakeHubble:
+        store = FakeStore()
+
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "is_enabled", return_value=True), \
+             patch.object(simons, "get_telescope", return_value=FakeHubble()), \
+             patch.object(sim.cache, "get",
+                          return_value=[("2020-01-01", 1.0), ("2020-02-01", 2.0)]):
+            assert sim._ai_capex_panel(force=True) is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_ai_capex_panel_skips_an_event_with_no_matching_price_point():
+    ts = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc).timestamp()
+
+    class FakeStore:
+        def load_events(self, limit=200):
+            return [{"type": "new_leader", "ts": ts, "name": "GPT-X"}]
+
+    class FakeHubble:
+        store = FakeStore()
+
+    # Every cached point predates the event -- no point with date >= it.
+    points = [("2020-01-01", 50.0), ("2020-06-01", 60.0)]
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "is_enabled", return_value=True), \
+             patch.object(simons, "get_telescope", return_value=FakeHubble()), \
+             patch.object(sim.cache, "get", return_value=points):
+            assert sim._ai_capex_panel(force=True) is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_ai_capex_panel_pairs_a_new_leader_event_with_smhs_move_since():
+    ts = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc).timestamp()
+
+    class FakeStore:
+        def load_events(self, limit=200):
+            return [{"type": "new_leader", "ts": ts, "name": "GPT-X"}]
+
+    class FakeHubble:
+        store = FakeStore()
+
+    points = [("2026-01-01", 100.0), ("2026-06-01", 150.0)]
+    sim, tmp = _isolated_simons()
+    try:
+        with patch.object(simons, "is_enabled", return_value=True), \
+             patch.object(simons, "get_telescope", return_value=FakeHubble()), \
+             patch.object(sim.cache, "get", return_value=points):
+            panel = sim._ai_capex_panel(force=True)
+        assert panel is not None
+        row = panel["rows"][0]
+        assert row["model"] == "GPT-X"
+        assert row["smh_then"] == 100.0
+        assert row["smh_now"] == 150.0
+        assert row["chg_pct"] == 50.0
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
