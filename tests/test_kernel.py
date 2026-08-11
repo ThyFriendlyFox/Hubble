@@ -495,6 +495,58 @@ def test_safe_sweep_clears_a_stale_last_error_on_recovery():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ── panels() resilience ──────────────────────────────────────────────────
+def test_panels_normalises_none_dict_and_list():
+    class Scope(Telescope):
+        slug = "test_panels_shape_ns"
+        signals = (Signal("v", "value", "VALUE"),)
+        default_weights = {"v": 100}
+
+        def collect(self, force=False):
+            return []
+
+    scope, tmp = _isolated_scope(Scope)
+    try:
+        scope.context = lambda force=False: None
+        assert scope.panels() == []
+
+        one = {"title": "T", "columns": [], "rows": []}
+        scope.context = lambda force=False: one
+        assert scope.panels() == [one]
+
+        many = [{"title": "A"}, {"title": "B"}]
+        scope.context = lambda force=False: many
+        assert scope.panels() == many
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_panels_swallows_a_broken_context_instead_of_crashing_the_view():
+    """A broken secondary panel must never take down the whole board -- the
+    same resilience contract safe_sweep() has for the sweep path, but for
+    the read path every single dashboard/API request goes through."""
+    class Scope(Telescope):
+        slug = "test_panels_broken_ns"
+        signals = (Signal("v", "value", "VALUE"),)
+        default_weights = {"v": 100}
+
+        def collect(self, force=False):
+            return [{"key": "a", "name": "A", "value": 1, "noise": False,
+                     "sources": ["x"], "link": ""}]
+
+        def context(self, force=False):
+            raise ValueError("boom")
+
+    scope, tmp = _isolated_scope(Scope)
+    try:
+        assert scope.panels() == []
+        payload = scope.view()
+        assert payload["panels"] == []
+        assert payload["count"] == 1
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_crossover_rule_reads_leading_from_prev_and_lagging_from_curr():
     """Holmdel's 'research -> builders' shape: unlike every other rule, the
     two fields it compares live at two different points in time."""

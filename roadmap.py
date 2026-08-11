@@ -1273,6 +1273,24 @@ PHASES = [
                        "test, so time.time() is mocked to strictly-"
                        "increasing values wherever a test calls record() "
                        "more than once"},
+            {"name": "Direct kernel tests for Telescope.panels()' broken-"
+                     "panel resilience", "done": True,
+             "detail": "audited telescope/base.py the same way snapshots.py "
+                       "was audited last iteration and found the same "
+                       "shape of gap: panels() — 'context(), normalised to "
+                       "a list and safe to call — a broken panel shouldn't "
+                       "break the view' per its own docstring — had zero "
+                       "direct tests, unlike safe_sweep(), which gets the "
+                       "identical resilience contract on the write path "
+                       "and IS tested. view(), meta(), context() and ttl() "
+                       "were also uncovered but are thin plumbing; panels() "
+                       "is the one with a real behavioral guarantee worth "
+                       "pinning down. Also re-verified Semantic Scholar "
+                       "live before starting: one genuine 200 on the first "
+                       "check, then 8 more requests at 3s spacing came back "
+                       "6x 429 / 2x 200 — the same intermittent shared-pool "
+                       "pattern HANDOFF.md already documents, not a real "
+                       "unblock, no doc change needed"},
         ],
     },
 ]
