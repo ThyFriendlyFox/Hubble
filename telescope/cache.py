@@ -8,8 +8,15 @@ ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 
 class Cache:
     def __init__(self, namespace):
+        # Directory creation is deferred to set() rather than done here:
+        # every telescope constructs a Cache on import (via Telescope.__init__),
+        # so an eager makedirs() here means merely instantiating one — even a
+        # short-lived test double whose .dir gets redirected before any real
+        # read or write — leaves a stray empty namespace folder in the real
+        # data/ directory. get()/age() already tolerate a missing directory
+        # (os.path.exists on a path under it just returns False), so only
+        # set() actually needs it to exist.
         self.dir = os.path.join(ROOT, namespace)
-        os.makedirs(self.dir, exist_ok=True)
 
     def _path(self, key):
         return os.path.join(self.dir, f"{key}.json")
@@ -28,6 +35,7 @@ class Cache:
             return None
 
     def set(self, key, value):
+        os.makedirs(self.dir, exist_ok=True)
         p = self._path(key)
         tmp = p + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:

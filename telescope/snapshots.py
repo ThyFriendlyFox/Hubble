@@ -30,11 +30,17 @@ class SnapshotStore:
         self.fields = tuple(BASE_FIELDS) + tuple(extra_fields)
         self.dir = os.path.join(ROOT, namespace, "history")
         self.events_file = os.path.join(ROOT, namespace, "events.json")
-        os.makedirs(self.dir, exist_ok=True)
+        # Deferred to _save(), the same reasoning as Cache.__init__: an
+        # eager makedirs() here means constructing a SnapshotStore at all —
+        # even a short-lived one whose .dir gets redirected before any real
+        # write, like a test double — leaves a stray empty namespace folder
+        # in the real data/ directory.
         self._lock = threading.Lock()
 
     # ── snapshot io ──────────────────────────────────────────────────────
     def _files(self):
+        if not os.path.isdir(self.dir):
+            return []
         return sorted(
             f for f in os.listdir(self.dir)
             if f.startswith("snapshot-") and f.endswith(".json")
@@ -57,6 +63,7 @@ class SnapshotStore:
         return {k: row.get(k) for k in self.fields}
 
     def _save(self, rows, ts):
+        os.makedirs(self.dir, exist_ok=True)
         snap = {"ts": ts, "rows": [self._slim(r) for r in rows]}
         path = os.path.join(self.dir, f"snapshot-{int(ts * 1000)}.json")
         tmp = path + ".tmp"

@@ -227,6 +227,44 @@ def test_cache_writes_empty_result_when_nothing_cached_yet():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ── lazy directory creation ──────────────────────────────────────────────
+# Found by inspecting the real data/ directory and finding a dozen empty
+# leftover namespace folders (test_snapshot_ns, test_panels_shape_ns, and
+# more) -- every _isolated_scope()/_isolated_store() call used to leak one,
+# because Cache.__init__/SnapshotStore.__init__ eagerly created their
+# on-disk directory under the real ROOT before the test ever got a chance
+# to redirect .dir/.dir+events_file elsewhere. Directory creation is now
+# deferred to the first real write.
+def test_cache_construction_does_not_touch_disk():
+    tmp = tempfile.mkdtemp()
+    try:
+        with patch("telescope.cache.ROOT", tmp):
+            cache = Cache("never_written_ns")
+            assert not os.path.exists(cache.dir)
+            assert cache.get("k", 3600) is None    # reads tolerate it too
+            assert not os.path.exists(cache.dir)
+            cache.set("k", {"a": 1})
+            assert os.path.exists(cache.dir)        # only a real write creates it
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_snapshot_store_construction_does_not_touch_disk():
+    tmp = tempfile.mkdtemp()
+    try:
+        with patch("telescope.snapshots.ROOT", tmp):
+            store = SnapshotStore("never_written_ns")
+            ns_dir = os.path.join(tmp, "never_written_ns")
+            assert not os.path.exists(ns_dir)
+            assert store.latest() is None           # reads tolerate it too
+            assert not os.path.exists(ns_dir)
+            store.record([{"key": "a", "name": "A", "rank": 1, "score": 1,
+                           "noise": False}])
+            assert os.path.exists(store.dir)         # only a real write creates it
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 # ── snapshot store ───────────────────────────────────────────────────────
 # telescope/snapshots.py backs store.latest() (relied on this session by
 # brief.py and every cross-telescope panel read), record()'s diff/dedupe,
@@ -336,8 +374,10 @@ def test_load_events_respects_since_and_limit_and_stays_newest_first():
 # ── backfill ─────────────────────────────────────────────────────────────
 def _isolated_scope(cls):
     """Instantiate a test Telescope with its cache/store redirected to a
-    throwaway tmp dir, so tests never touch the real data/ directory beyond
-    the harmless empty namespace folder __init__ always creates."""
+    throwaway tmp dir. Cache/SnapshotStore only create their on-disk
+    directory lazily on first write, not in __init__, so redirecting here
+    before any read or write happens means the real data/ directory is
+    never touched at all -- not even an empty namespace folder."""
     tmp = tempfile.mkdtemp()
     scope = cls()
     scope.cache.dir = tmp
