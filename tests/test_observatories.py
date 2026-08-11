@@ -21,7 +21,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import shutil                                                     # noqa: E402
 from unittest.mock import patch                                  # noqa: E402
 
-from observatories import kepler                                  # noqa: E402
+from observatories import jackson, kepler                        # noqa: E402
+from observatories.jackson import Jackson                         # noqa: E402
 from observatories.kepler import (Kepler, _core_name,             # noqa: E402
                                   _distinctive_enough,
                                   _looks_like_the_company, _slug)
@@ -437,5 +438,311 @@ def test_sector_heat_panel_is_none_when_no_current_issuer_matches_the_industry()
                  {"noise": False, "industry": "Real Estate", "name": "Not AI Co"},
              ]):
             assert kep._sector_heat_panel() is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# JACKSON
+# ═══════════════════════════════════════════════════════════════════════
+def _isolated_jackson():
+    """A fresh Jackson instance with both its disk cache AND its snapshot
+    store redirected to a throwaway tmp dir -- _psc_events()/sweep() write
+    real state (psc_events_seen, appended feed events), so this needs the
+    same two-attribute isolation test_kernel.py's own SnapshotStore tests
+    use, not just the cache redirection Kepler's tests above needed."""
+    kep = Jackson()
+    tmp = tempfile.mkdtemp()
+    kep.cache.dir = tmp
+    kep.store.dir = os.path.join(tmp, "history")
+    kep.store.events_file = os.path.join(tmp, "events.json")
+    os.makedirs(kep.store.dir, exist_ok=True)
+    return kep, tmp
+
+
+# ── pure logic ────────────────────────────────────────────────────────
+def test_filters_builds_the_dod_toptier_time_window_filter():
+    f = jackson._filters("2026-01-01", "2026-06-01")
+    assert f["time_period"] == [{"start_date": "2026-01-01", "end_date": "2026-06-01"}]
+    assert f["agencies"] == [
+        {"type": "awarding", "tier": "toptier", "name": "Department of Defense"}
+    ]
+    assert f["award_type_codes"] == jackson.CONTRACT_TYPES
+
+
+# ── collect(): the empty-normalized-name guard ───────────────────────────
+def test_collect_skips_a_recipient_whose_name_normalizes_to_nothing():
+    """_norm_company() strips punctuation and corporate suffixes -- a
+    recipient name that's entirely punctuation (a real, if rare, shape in
+    USAspending's raw feed) normalizes to an empty string, which can't be
+    used as a join key and must be dropped rather than silently merged
+    with every other empty-key row."""
+    kep, tmp = _isolated_jackson()
+
+    def fake_recipients(cache_key, start, end, ttl, limit=100):
+        if cache_key == "recipients_12m":
+            return [{"name": "!!! ---", "amount": 1e6, "uei": "U1"}]
+        return []
+
+    try:
+        with patch.object(kep, "_recipients", side_effect=fake_recipients), \
+             patch.object(kep, "_award_counts", return_value={}):
+            rows = kep.collect(force=True)
+        assert rows == []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── _psc_panel(): empty-window and SBIR-subtitle branches ───────────────
+def test_psc_panel_is_none_with_no_current_psc_data():
+    kep, tmp = _isolated_jackson()
+    try:
+        with patch.object(kep, "_psc", return_value=[]), \
+             patch.object(kep, "_psc_prior", return_value=[]), \
+             patch.object(kep, "_sbir", return_value=[]):
+            assert kep._psc_panel(force=True) is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_psc_panel_subtitle_mentions_sbir_count_when_sbir_data_present():
+    kep, tmp = _isolated_jackson()
+    cur = [{"code": "1234", "name": "Hypersonics", "amount": 1e8}]
+    try:
+        with patch.object(kep, "_psc", return_value=cur), \
+             patch.object(kep, "_psc_prior", return_value=[]), \
+             patch.object(kep, "_sbir", return_value=[{"a": 1}, {"a": 2}]):
+            panel = kep._psc_panel(force=True)
+        assert panel is not None
+        assert "2 recent DoD SBIR awards tracked" in panel["subtitle"]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── _psc_events(): the CAPABILITY AREAS panel's new_program/budget_shift ─
+# event logic -- entirely uncovered by either suite before this: sweep()
+# is the only caller, and nothing had ever exercised Jackson's own sweep()
+# override at all. Persistence is against the last ANNOUNCED amount, not
+# the last sweep's reading -- see the docstring on _psc_events() itself.
+def test_psc_events_on_empty_rows_fires_nothing():
+    kep, tmp = _isolated_jackson()
+    try:
+        assert kep._psc_events([]) == []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_psc_events_skips_a_row_with_no_code():
+    kep, tmp = _isolated_jackson()
+    try:
+        rows = [{"code": None, "name": "Whatever", "amount": 100e6, "growth_pct": None}]
+        assert kep._psc_events(rows) == []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_psc_events_skips_amounts_below_the_50m_floor():
+    kep, tmp = _isolated_jackson()
+    try:
+        rows = [{"code": "1234", "name": "Small Area", "amount": 10e6, "growth_pct": None}]
+        events = kep._psc_events(rows)
+        assert events == []
+        assert kep.cache.get("psc_events_seen", 10 ** 9) == {}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_psc_events_fires_new_program_for_a_code_with_no_prior_reading():
+    kep, tmp = _isolated_jackson()
+    try:
+        rows = [{"code": "1234", "name": "Hypersonics", "amount": 80e6, "growth_pct": None}]
+        events = kep._psc_events(rows)
+        assert len(events) == 1
+        assert events[0]["type"] == "new_program"
+        assert events[0]["key"] == "1234"
+        assert "Hypersonics" in events[0]["headline"]
+        assert kep.cache.get("psc_events_seen", 10 ** 9) == {"1234": 80e6}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_psc_events_records_a_new_codes_baseline_silently_when_a_prior_reading_exists():
+    """Not in psc_events_seen yet, but growth_pct is present -- meaning
+    _psc_prior() *did* have this code a year ago, so this is the event-
+    tracking cache catching up on first run, not a genuine 'appeared out of
+    nowhere' program. No event, just a recorded baseline."""
+    kep, tmp = _isolated_jackson()
+    try:
+        rows = [{"code": "1234", "name": "Hypersonics", "amount": 80e6, "growth_pct": 15.0}]
+        events = kep._psc_events(rows)
+        assert events == []
+        assert kep.cache.get("psc_events_seen", 10 ** 9) == {"1234": 80e6}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_psc_events_does_not_advance_the_baseline_on_a_belowthreshold_move():
+    """The exact property the module docstring calls out: comparing against
+    the last ANNOUNCEMENT rather than the last sweep, so slow cumulative
+    drift keeps accumulating against a fixed baseline instead of resetting
+    every sweep and never crossing the threshold."""
+    kep, tmp = _isolated_jackson()
+    kep.cache.set("psc_events_seen", {"1234": 80e6})
+    try:
+        rows = [{"code": "1234", "name": "Hypersonics", "amount": 90e6, "growth_pct": None}]
+        events = kep._psc_events(rows)   # +12.5%, under the 30% bar
+        assert events == []
+        assert kep.cache.get("psc_events_seen", 10 ** 9) == {"1234": 80e6}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_psc_events_fires_budget_shift_surged_on_a_real_jump():
+    kep, tmp = _isolated_jackson()
+    kep.cache.set("psc_events_seen", {"1234": 80e6})
+    try:
+        rows = [{"code": "1234", "name": "Hypersonics", "amount": 120e6, "growth_pct": None}]
+        events = kep._psc_events(rows)   # +50%
+        assert len(events) == 1
+        assert events[0]["type"] == "budget_shift"
+        assert "surged" in events[0]["headline"]
+        assert kep.cache.get("psc_events_seen", 10 ** 9) == {"1234": 120e6}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_psc_events_fires_budget_shift_fell_on_a_real_drop():
+    kep, tmp = _isolated_jackson()
+    kep.cache.set("psc_events_seen", {"1234": 100e6})
+    try:
+        rows = [{"code": "1234", "name": "Hypersonics", "amount": 60e6, "growth_pct": None}]
+        events = kep._psc_events(rows)   # -40%
+        assert len(events) == 1
+        assert events[0]["type"] == "budget_shift"
+        assert "fell" in events[0]["headline"]
+        assert kep.cache.get("psc_events_seen", 10 ** 9) == {"1234": 60e6}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── sweep(): Jackson's own override, layering psc events on the base sweep ─
+def test_sweep_appends_and_dispatches_psc_events_on_top_of_the_base_sweep():
+    """Isolates Jackson.sweep()'s own added logic from Telescope.sweep()'s
+    machinery (already covered by telescope/base.py's own kernel tests) by
+    patching the base class method directly -- super().sweep() still
+    resolves through the normal MRO to the patched version."""
+    kep, tmp = _isolated_jackson()
+    base_event = {"type": "new_prime", "key": "widgetco", "name": "Widgetco",
+                  "ts": 0, "telescope": "jackson", "headline": "base event"}
+    psc_event = {"type": "new_program", "key": "1234", "name": "Hypersonics",
+                 "ts": 0, "telescope": "jackson", "headline": "psc event"}
+    dispatched = []
+
+    class FakeNotifier:
+        def dispatch(self, events, scope):
+            dispatched.append(list(events))
+
+    try:
+        with patch.object(jackson.Telescope, "sweep", return_value=[base_event]), \
+             patch.object(kep, "_psc_panel", return_value={"rows": [{"code": "1234"}]}), \
+             patch.object(kep, "_psc_events", return_value=[psc_event]):
+            events = kep.sweep(notifier=FakeNotifier())
+        assert events == [base_event, psc_event]
+        stored = kep.store.load_events(limit=10)
+        assert any(e["type"] == "new_program" for e in stored)
+        # The base sweep's own dispatch is mocked away with it; only
+        # Jackson's own psc-events dispatch should be observed here.
+        assert dispatched == [[psc_event]]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_sweep_does_not_append_or_dispatch_when_no_psc_events_fire():
+    kep, tmp = _isolated_jackson()
+    base_event = {"type": "new_prime", "key": "widgetco", "name": "Widgetco",
+                  "ts": 0, "telescope": "jackson", "headline": "base event"}
+    dispatched = []
+
+    class FakeNotifier:
+        def dispatch(self, events, scope):
+            dispatched.append(list(events))
+
+    try:
+        with patch.object(jackson.Telescope, "sweep", return_value=[base_event]), \
+             patch.object(kep, "_psc_panel", return_value=None), \
+             patch.object(kep, "_psc_events", return_value=[]):
+            events = kep.sweep(notifier=FakeNotifier())
+        assert events == [base_event]
+        assert kep.store.load_events(limit=10) == []
+        assert dispatched == []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── _unmapped_panel(): the Kepler cross-telescope join ───────────────────
+def test_unmapped_panel_is_none_when_kepler_is_disabled():
+    kep, tmp = _isolated_jackson()
+    try:
+        with patch.object(jackson, "is_enabled", return_value=False):
+            assert kep._unmapped_panel() is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_unmapped_panel_swallows_a_broken_kepler_read():
+    kep, tmp = _isolated_jackson()
+    try:
+        with patch.object(jackson, "is_enabled", return_value=True), \
+             patch.object(jackson, "get_telescope", side_effect=Exception("boom")):
+            assert kep._unmapped_panel() is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_unmapped_panel_is_none_when_no_kepler_row_reads_as_defense():
+    kep, tmp = _isolated_jackson()
+
+    class FakeStore:
+        def latest(self):
+            return {"rows": [
+                {"key": "1", "name": "Latitude Health", "industry": "Biotechnology",
+                 "noise": False},
+            ]}
+
+    class FakeKepler:
+        store = FakeStore()
+
+    try:
+        with patch.object(jackson, "is_enabled", return_value=True), \
+             patch.object(jackson, "get_telescope", return_value=FakeKepler()):
+            assert kep._unmapped_panel() is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_unmapped_panel_surfaces_a_defense_relevant_kepler_row():
+    kep, tmp = _isolated_jackson()
+
+    class FakeStore:
+        def latest(self):
+            return {"rows": [
+                {"key": "1", "name": "Anduril Aerospace Systems",
+                 "industry": "Other Technology", "noise": False,
+                 "raise_size": 5e7, "raise_fmt": "$50.0M", "state": "CA",
+                 "filed": "2026-01-01", "stealth": False},
+                {"key": "2", "name": "Latitude Health", "industry": "Biotechnology",
+                 "noise": False},
+            ]}
+
+    class FakeKepler:
+        store = FakeStore()
+
+    try:
+        with patch.object(jackson, "is_enabled", return_value=True), \
+             patch.object(jackson, "get_telescope", return_value=FakeKepler()):
+            panel = kep._unmapped_panel()
+        assert panel is not None
+        assert len(panel["rows"]) == 1
+        assert panel["rows"][0]["name"] == "Anduril Aerospace Systems"
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
