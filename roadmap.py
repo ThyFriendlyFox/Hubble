@@ -1871,6 +1871,38 @@ PHASES = [
                        "the exact key format and that the panel and event "
                        "paths agree, not just that each individually looks "
                        "reasonable"},
+            {"name": "Jackson's caveat now honestly discloses SBIR's "
+                     "persistent unavailability", "done": True,
+             "detail": "a genuine gap identified much earlier this session "
+                       "(the exact next investigation flagged right after "
+                       "Holmdel's OpenAlex caveat got the same treatment) "
+                       "but never actually completed — the intervening "
+                       "context reset before it was executed, and it sat "
+                       "unaddressed for many iterations, only found again "
+                       "now by re-reading Jackson's actual caveat text "
+                       "fresh rather than assuming it was already handled. "
+                       "sources_label lists SBIR as an active source, and "
+                       "the CAPABILITY AREAS panel's subtitle conditionally "
+                       "appends an SBIR award count when self._sbir(ttl) "
+                       "returns anything — but re-verified live before "
+                       "writing anything: SBIR.gov itself still returns "
+                       "429 'Public API is not available', the cached "
+                       "sbir.json on disk is an empty list, and this has "
+                       "been true for effectively this deployment's entire "
+                       "real testing history, not an occasional hiccup. "
+                       "Since the subtitle only appends when there IS "
+                       "data, a user sees no SBIR mention at all rather "
+                       "than an honest 'zero this window' or a stated "
+                       "outage — indistinguishable from the source simply "
+                       "never having existed, exactly the same shape of "
+                       "problem Holmdel's OpenAlex caveat already had. "
+                       "Added an honest note to both the class-level "
+                       "caveat (rendered on the board) and the module "
+                       "docstring's own SBIR source description, matching "
+                       "Holmdel's precedent of fixing both together. "
+                       "Verified the updated caveat renders correctly via "
+                       "a real meta() call and confirmed live in the "
+                       "browser on Jackson's actual board"},
         ],
     },
 ]
