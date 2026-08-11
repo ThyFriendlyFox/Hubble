@@ -23,7 +23,7 @@ No API keys. Every source below is public.
 |---|---|---|---|---|
 | 🔭 | **Hubble** | AI | models | HuggingFace · OpenRouter · Artificial Analysis · Design Arena (both embedded in OpenRouter) |
 | 🛡 | **Jackson** | Defense | primes | USAspending obligations · PSC capability areas · SBIR · Kepler (cross-reference) |
-| 💰 | **Simons** | Capital | indicators | FRED · Yahoo Finance · CoinGecko · SEC 13F-HR |
+| 💰 | **Simons** | Capital | indicators | FRED · Yahoo Finance · CoinGecko · SEC 13F-HR · Hubble (cross-reference) |
 | 🪐 | **Kepler** | Startups | issuers | SEC Form D · EDGAR · Hacker News · Greenhouse/Lever/Ashby · Holmdel (cross-reference) |
 | 📡 | **Holmdel** | Ideas | topics | Hacker News · Wikipedia pageviews · npm · OpenAlex · arXiv · GitHub |
 | 🚛 | **Reddington** | Logistics | gauges | FRED freight series · freight-sector equities |
@@ -46,7 +46,9 @@ laptop or light the whole observatory on a server. Toggle state persists to
   and the feed announces regime crossings. A secondary **WHALE MOVES** panel
   tracks quarter-over-quarter 13F position deltas across a curated list of
   large filers — positioning from months ago (13F-HR is due 45 days after
-  quarter end), not now, and the caveat says so.
+  quarter end), not now, and the caveat says so. A second panel, **AI CAPEX
+  WATCH**, pairs Hubble's new-leader events with how SMH (semiconductors)
+  moved since — a loose observational correlation, not a signal.
 - **Holmdel** — idea velocity across a curated watchlist, ranked on
   acceleration rather than volume, with a cross-source **spread** signal
   (one surface is a rumour, three is a trend) across six independent

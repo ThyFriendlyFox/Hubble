@@ -17,10 +17,25 @@ Sources (all public, no keys):
   Yahoo Finance chart  equity/bond/commodity ETF closes
   CoinGecko            crypto
   SEC EDGAR 13F-HR     quarter-over-quarter position deltas, curated funds
+  Hubble (cross-ref)   AI CAPEX WATCH panel only — reads Hubble's already-
+                       recorded new_leader events, never forces it to sweep
 
 Latency note: FRED daily series publish with a 1-2 business day lag, and the
 monthly series (CPI, unemployment) lag by weeks. Simons sees the recent past
 clearly; it is a positioning instrument, not a trading signal.
+
+── AI CAPEX WATCH: what it actually shows ────────────────────────────────
+TELESCOPES.md's own "Shared infrastructure" section named this join
+("Hubble new_leader -> Simons AI-capex watch") as a design goal alongside
+the two other cross-telescope joins, both of which shipped; this one hadn't
+been, until now. It pairs each of Hubble's last 5 new_leader events with SMH's (VanEck
+Semiconductor ETF, the standard single-ticker proxy for AI infrastructure
+spending) price move from that event's date to today.
+Deliberately framed as a loose observational correlation, not a signal:
+SMH moves on countless factors that have nothing to do with any single
+model release, and this panel never implies otherwise. SMH is fetched once
+as a normal panel Series (so it also ranks alongside every other gauge on
+the main board) and read from that same cache here — never fetched twice.
 
 ── 13F whale tracking: what it actually shows ───────────────────────────────
 13F-HR filings are due 45 days after quarter end, so "recent" here means
@@ -37,14 +52,16 @@ universe of 13F filers (thousands) — the same tradeoff Holmdel makes with its
 topic list, for the same reason: a hand-picked universe you can actually
 reason about beats a firehose you can't.
 """
+import datetime as dt
 import re
 import time
+import traceback
 
 from telescope import Column, Signal, Telescope
 from telescope.events import ClimberRule, NewLeaderRule, ThresholdRule, money
 from telescope.http import try_json, try_text, xml_tag
 from telescope.parse import to_float
-from telescope.registry import register
+from telescope.registry import get as get_telescope, is_enabled, register
 from telescope.series import Series, change, fetch_panel, historical_panel
 
 SEC_UA = {"User-Agent": "Observatory-Telescope/1.0 (thyfriendlyfox@gmail.com)"}
@@ -105,6 +122,9 @@ SERIES = (
     Series("tlt", "20Y+ Treasuries", "EQUITY", "price", "yahoo", "TLT"),
     Series("hyg", "High Yield Bonds", "CREDIT", "price", "yahoo", "HYG"),
     Series("gld", "Gold", "COMMODITY", "price", "yahoo", "GLD"),
+    # SMH is also the AI CAPEX WATCH panel's data source below -- fetched
+    # once here, read from cache there, never fetched twice.
+    Series("smh", "AI/Semis (SMH)", "EQUITY", "price", "yahoo", "SMH"),
     # ── crypto ───────────────────────────────────────────────────────────
     Series("btc", "Bitcoin", "CRYPTO", "price", "coingecko", "bitcoin"),
     Series("eth", "Ethereum", "CRYPTO", "price", "coingecko", "ethereum"),
@@ -119,14 +139,18 @@ class Simons(Telescope):
     glyph = "💰"
     tagline = "MARKET ATTENTION INDEX"
     entity_label = "INDICATORS"
-    sources_label = "FRED · YAHOO · COINGECKO · SEC 13F-HR"
+    sources_label = "FRED · YAHOO · COINGECKO · SEC 13F-HR · HUBBLE (CROSS-REF)"
     caveat = ("Ranks by abnormality, not by opinion — a high score means the "
               "gauge is far from its own normal, not that it's bullish. Daily "
               "series lag 1-2 business days; monthly series lag weeks. The "
               "WHALE MOVES panel is a curated watchlist of ~10 large filers, "
               "not the full universe of 13F filers, and 13F-HR is due 45 "
               "days after quarter end — it shows positioning from months "
-              "ago, not now.")
+              "ago, not now. The AI CAPEX WATCH panel pairs Hubble's "
+              "new-leader events with SMH's price move since — a loose "
+              "observational correlation for a curious reader, not a "
+              "trading signal or a claim that one causes the other; it "
+              "only appears while Hubble is enabled.")
 
     cache_ttl = 3600
     poll_seconds = 12 * 3600
@@ -199,6 +223,9 @@ class Simons(Telescope):
         whales = self._whale_panel(force)
         if whales:
             panels.append(whales)
+        capex = self._ai_capex_panel(force)
+        if capex:
+            panels.append(capex)
         return panels or None
 
     # ── secondary panel: the shape of the curve right now ────────────────
@@ -390,6 +417,78 @@ class Simons(Telescope):
                 {"field": "recent_value", "label": "NEW VALUE", "fmt": "money"},
                 {"field": "change_fmt", "label": "CHANGE", "fmt": "text"},
                 {"field": "direction", "label": "MOVE", "fmt": "text"},
+            ],
+            "rows": rows,
+        }
+
+    # ── secondary panel: cross-telescope join, not a new indicator ───────
+    def _ai_capex_panel(self, force=False):
+        """Hubble's new_leader event (a new #1 on the LLM leaderboard) paired
+        with how AI/semiconductor equities (SMH) have moved since. A loose,
+        honestly-labelled observational correlation, not a claim of
+        causation -- SMH moves on countless factors having nothing to do
+        with any one model release, and this deliberately never says
+        otherwise (same "positioning instrument, not a trading signal"
+        framing this telescope's own caveat already uses).
+
+        Reads Hubble's already-recorded events and SMH's already-cached
+        price history only; never forces a Hubble sweep or a fresh SMH
+        fetch -- the same discipline Kepler's SECTOR HEAT panel already
+        follows for its own Holmdel read, and for the same reason: forcing
+        a slow fetch of a DIFFERENT telescope's data as a side effect of
+        loading this one would be the exact silent-multi-minute-page-load
+        bug already fixed elsewhere this session.
+        """
+        if not is_enabled("hubble"):
+            return None
+        try:
+            hubble = get_telescope("hubble")
+            events = hubble.store.load_events(limit=200)
+        except Exception:
+            traceback.print_exc()
+            return None
+        leaders = [e for e in events if e.get("type") == "new_leader"][:5]
+        if not leaders:
+            return None
+        points = self.cache.get("series_smh", self.ttl(force)) or []
+        if len(points) < 2:
+            return None
+        latest_date, latest_price = points[-1]
+        rows = []
+        for e in leaders:
+            ts = e.get("ts")
+            name = e.get("name")
+            if not ts or not name:
+                continue
+            event_date = dt.datetime.fromtimestamp(
+                ts, dt.timezone.utc).date().isoformat()
+            at_event = next((v for d, v in points if d >= event_date), None)
+            if at_event is None:
+                continue
+            rows.append({
+                "model": name,
+                "since": event_date,
+                "smh_then": round(at_event, 2),
+                "smh_now": round(latest_price, 2),
+                "chg_pct": round((latest_price - at_event) / at_event * 100, 2)
+                           if at_event else None,
+            })
+        if not rows:
+            return None
+        return {
+            "title": "AI CAPEX WATCH · SEMIS SINCE EACH NEW #1",
+            "subtitle": (
+                f"VanEck Semiconductor ETF (SMH) move since each recent "
+                f"Hubble new-leader event, as of {latest_date} — a loose "
+                "observational correlation, not a trading signal or a "
+                "causal claim"
+            ),
+            "columns": [
+                {"field": "model", "label": "NEW #1", "fmt": "text"},
+                {"field": "since", "label": "SINCE", "fmt": "date"},
+                {"field": "smh_then", "label": "SMH THEN", "fmt": "money"},
+                {"field": "smh_now", "label": "SMH NOW", "fmt": "money"},
+                {"field": "chg_pct", "label": "CHANGE", "fmt": "pct"},
             ],
             "rows": rows,
         }
