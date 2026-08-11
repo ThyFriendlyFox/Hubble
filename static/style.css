@@ -64,7 +64,13 @@ main { position: relative; z-index: 1; max-width: 1480px; margin: 0 auto; paddin
 .tag { margin: 4px 0 0; color: var(--ink-dim); font-size: 9.5px; letter-spacing: 2.5px; }
 
 /* ── view tabs ────────────────────────────── */
-.tabs { display: flex; gap: 0; margin-top: 12px; }
+/* flex-wrap, not overflow-x: body has overflow-x: hidden globally, so an
+   unwrapped row here would clip TELESCOPES/ROADMAP off-screen on a narrow
+   viewport with no way to reach them at all -- found by measuring .tabs'
+   own scrollWidth (~433px unwrapped) against a real mobile viewport width,
+   not by eye. Matches .scope-strip's existing, already-correct handling of
+   the identical shape below (a row of bordered buttons that may not fit). */
+.tabs { display: flex; flex-wrap: wrap; gap: 0; margin-top: 12px; }
 .tab {
   font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 600;
   letter-spacing: 1.5px; color: var(--ink-faint); cursor: pointer;
@@ -197,7 +203,11 @@ main { position: relative; z-index: 1; max-width: 1480px; margin: 0 auto; paddin
 
 /* ── controls ─────────────────────────────── */
 .controls { }
-.control-row { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+/* Same overflow shape as .tabs above (fixed-width checkboxes + a button
+   competing with body's overflow-x: hidden on a narrow viewport) -- wraps
+   for the same reason. .spacer collapsing on a wrapped row just left-
+   aligns RESET WEIGHTS instead of pushing it right, which is fine. */
+.control-row { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 18px; }
 .field {
   display: flex; align-items: center; gap: 8px; flex: 1; max-width: 380px;
   border: 1px solid var(--line-2); padding: 0 12px; background: var(--bg-2);

@@ -2720,6 +2720,43 @@ PHASES = [
                        "tests + 101 domain-pack tests, unaffected and "
                        "confirmed green; the live suite wasn't re-run "
                        "since nothing it covers changed"},
+            {"name": "Fixed a real narrow-viewport layout bug: the top "
+                     "nav and the weighting-matrix controls row both "
+                     "clipped off-screen, unreachable, below ~433px",
+             "done": True,
+             "detail": "the mobile/narrow-viewport check flagged as "
+                       "unverified twice now finally got somewhere -- not "
+                       "by trusting this session's own screenshot tool, "
+                       "which stayed inconsistent with the page's actual "
+                       "reported viewport width all iteration (a real "
+                       "tooling limitation, still unresolved, noted "
+                       "honestly rather than worked around by guessing), "
+                       "but by measuring the CSS directly: `.tabs` (the "
+                       "BOARD/WHAT'S NEW/BRIEF/TELESCOPES/ROADMAP row) is "
+                       "`display: flex` with no wrap and no scroll "
+                       "handling, its five buttons measure ~433px wide "
+                       "unwrapped, and `body` sets `overflow-x: hidden` "
+                       "globally -- so on any real viewport narrower than "
+                       "that, TELESCOPES and ROADMAP would be clipped "
+                       "with no way to reach them at all, not just "
+                       "visually cramped. `.control-row` (the FILTER box, "
+                       "HIDE NOISE/SCORED ONLY/WATCHED ONLY checkboxes and "
+                       "RESET WEIGHTS) had the identical shape and the "
+                       "same missing wrap. Both fixed with `flex-wrap: "
+                       "wrap`, matching `.scope-strip` (the telescope "
+                       "switcher) and `.views-row`/`.views-list` (saved "
+                       "views), which already use exactly this pattern "
+                       "correctly for the same kind of row -- not a new "
+                       "convention, closing a gap in an existing one. "
+                       "Verified live: a fresh screenshot at the same "
+                       "narrow setting that previously showed TELESCOPES "
+                       "cut off and WATCHED ONLY missing entirely now "
+                       "shows all five tabs and all three checkboxes, "
+                       "each on its own wrapped line, fully visible. "
+                       "Pure CSS -- no Python changed, so the fast suites "
+                       "(118 kernel + 101 domain-pack) were run as a "
+                       "sanity check rather than expected to catch "
+                       "anything, and didn't"},
         ],
     },
 ]

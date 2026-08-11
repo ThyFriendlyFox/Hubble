@@ -116,11 +116,20 @@ pass that finding's own follow-up called for happened next: Jackson's
 and Simons' boards (both previously unchecked), SAVE VIEW's apply/delete
 cycle, and the TELESCOPES tab's on/off toggle all verified live and all
 correct — no new bug this time, a real, honest result in its own right.
-Mobile/narrow-viewport rendering is still genuinely unverified — this
-session's own `resize_window` tool stopped reporting a consistent
-viewport partway through, a tooling problem, not a finding about the
-app either way. `roadmap.py`'s own Phase 5, 6 and 7 entries are the
-detailed log — this is only the shape of it.
+Mobile/narrow-viewport rendering was picked back up this iteration and
+paid off — not via the still-unreliable screenshot tool (still
+inconsistent with the page's own reported viewport width, still
+unresolved), but by measuring the CSS directly: `.tabs` (the top nav)
+and `.control-row` (the weighting-matrix controls) were both plain
+`display: flex` with no wrap, `.tabs` alone measuring ~433px unwrapped
+against a `body` with `overflow-x: hidden` — so on a real narrow
+viewport, TELESCOPES/ROADMAP and the SCORED ONLY/WATCHED ONLY checkboxes
+would be clipped off-screen and genuinely unreachable, not just
+cramped. Both fixed with `flex-wrap: wrap`, matching `.scope-strip` and
+`.views-row`/`.views-list`, which already handle the identical row
+shape correctly — closing a gap in an existing pattern, not inventing a
+new one. `roadmap.py`'s own Phase 5, 6 and 7 entries are the detailed
+log — this is only the shape of it.
 
 Work is on branch `claude/telescope-dashboard-concept-lo1ay8`, open as **PR #1**.
 Pushing to that branch updates the PR — do not open a new one.
@@ -200,23 +209,31 @@ its current `observatories/*.py` body hasn't been done as its own pass —
 plausible next candidate if this fallback comes up again.
 
 The "drive the dashboard in a real browser" fallback (Phase 7) has now had
-two passes. The first found the cache stampede. The second drove Jackson's
-and Simons' boards, SAVE VIEW's apply/delete, and the telescope toggle,
-all correct — a real, honest "nothing wrong here" result, not a gap. Still
-genuinely unverified: mobile/narrow-viewport and dark-mode rendering (this
-session's own `resize_window` tool got unreliable partway through the
-second pass — a tooling problem, not an app finding either way, so don't
-read anything into it) and SAVE VIEW's *create* half specifically (it uses
-a native `prompt()` that this session's automation can't drive; the code
-itself looks fine on inspection, and a real user would have no trouble,
-but it's never been clicked through end-to-end live). Holmdel's board is
-still slow as of this writing — not the stampede returning (`github.json`
-was rewritten cleanly once already since the fix landed, proving a full
-sweep completes), but OpenAlex specifically stuck retrying for 20+ minutes
-with zero progress, consistent with this session's own testing having
-exhausted OpenAlex's small daily budget (documented above to reset only
-at midnight UTC). Check the current time against that reset before reading
-anything into Holmdel being slow on the next iteration.
+three passes. The first found the cache stampede. The second drove
+Jackson's and Simons' boards, SAVE VIEW's apply/delete, and the telescope
+toggle, all correct. The third finally made progress on narrow-viewport
+rendering by not trusting the screenshot tool (still inconsistent with
+the page's own reported viewport width — a real, unresolved tooling
+limitation, not an app finding) and instead measuring `.tabs`/
+`.control-row`'s CSS directly: both were unwrapped flex rows wider than
+a real narrow viewport, sitting inside a `body` with `overflow-x: hidden`
+— genuinely unreachable content, not just cramped. Fixed with `flex-wrap:
+wrap`, matching the pattern `.scope-strip` and `.views-row` already used
+correctly. If the screenshot tool is still unreliable next time this
+comes up, this is the technique that actually worked: read the CSS, check
+`scrollWidth` against a real target width via `javascript_exec`, don't
+wait for a trustworthy screenshot. Still genuinely unverified: dark-mode
+rendering, and SAVE VIEW's *create* half specifically (native `prompt()`,
+can't be driven by this session's automation; the code looks fine on
+inspection and a real user would have no trouble, but it's never been
+clicked through live). Holmdel's board is still slow as of this writing
+— not the stampede returning (`github.json` was rewritten cleanly once
+already since the fix landed, proving a full sweep completes), but
+OpenAlex specifically re-confirmed at a real `429` this iteration too,
+consistent with this session's own testing having exhausted its small
+daily budget (documented above to reset only at midnight UTC). Check the
+current time against that reset before reading anything into Holmdel
+being slow on the next iteration.
 
 ## Then work the roadmap
 
