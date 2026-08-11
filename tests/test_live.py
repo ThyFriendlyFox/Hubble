@@ -12,7 +12,9 @@ shape is exactly the failure we care about catching.
 Fetched data is written to the normal disk cache, so re-runs are fast.
 """
 import os
+import shutil
 import sys
+import tempfile
 
 import pytest
 import requests
@@ -267,6 +269,43 @@ def test_api_toggle_unknown_slug_is_404_without_touching_real_state(client):
     data/observatory.json the real dev server reads."""
     resp = client.post("/api/observatory/does-not-exist/toggle")
     assert resp.status_code == 404
+
+
+def test_api_toggle_flips_real_state_and_is_reflected_by_the_registry(client):
+    """The success path of api_toggle() -- only the 404 branch above had
+    coverage. registry.set_enabled() persists to data/observatory.json, the
+    same file the real dev server reads, so STATE_FILE is redirected to a
+    throwaway temp file first (the same isolation shape as test_kernel.py's
+    _isolated_registry(), just without swapping out the registered classes
+    too -- this test wants the real hubble telescope, not a fake one)."""
+    tmp_dir = tempfile.mkdtemp()
+    orig_state_file = registry.STATE_FILE
+    registry.STATE_FILE = os.path.join(tmp_dir, "observatory.json")
+    try:
+        resp = client.post("/api/observatory/hubble/toggle",
+                            json={"enabled": False})
+        assert resp.status_code == 200
+        assert resp.get_json() == {"slug": "hubble", "enabled": False}
+        assert registry.is_enabled("hubble") is False
+
+        resp = client.post("/api/observatory/hubble/toggle",
+                            json={"enabled": True})
+        assert resp.get_json() == {"slug": "hubble", "enabled": True}
+        assert registry.is_enabled("hubble") is True
+    finally:
+        registry.STATE_FILE = orig_state_file
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def test_api_brief_send_dispatches_without_error(client):
+    """No OBSERVATORY_DISCORD_WEBHOOK/OBSERVATORY_SLACK_WEBHOOK/X_API_KEY
+    are set in this environment (confirmed live before writing this test),
+    so dispatch_brief() only logs -- safe to actually call, not just mock."""
+    resp = client.post("/api/observatory/brief/send")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["sent"] is True
+    assert isinstance(data["text"], str) and data["text"]
 
 
 def test_api_sweep_forces_a_real_sweep_and_returns_the_right_shape(client):

@@ -1222,6 +1222,32 @@ PHASES = [
                        "(unlike Kepler's domains/hiring, where empty is the "
                        "frequent legitimate outcome and a canary probe was "
                        "needed instead). Both suites verified green after"},
+            {"name": "Test coverage for the toggle and brief/send routes",
+             "done": True,
+             "detail": "audited every Flask route against test_live.py's "
+                       "client tests rather than assume coverage matched "
+                       "the route list, and found two real gaps: "
+                       "api_toggle()'s success path (only its 404-unknown-"
+                       "slug branch was tested) and api_brief_send() (no "
+                       "coverage at all). Both are exactly the kind of "
+                       "route a refactor could silently break without any "
+                       "test noticing. The toggle route persists to "
+                       "data/observatory.json, the same file a real running "
+                       "dev server reads, so the new test redirects "
+                       "registry.STATE_FILE to a throwaway temp dir first — "
+                       "the same isolation shape as test_kernel.py's "
+                       "_isolated_registry() helper, minus swapping the "
+                       "registered classes, since this test wants the real "
+                       "hubble telescope. Verified live before writing the "
+                       "brief/send test that none of "
+                       "OBSERVATORY_DISCORD_WEBHOOK/"
+                       "OBSERVATORY_SLACK_WEBHOOK/X_API_KEY are set in this "
+                       "environment, so calling the real dispatch path logs "
+                       "only and is safe to actually invoke rather than "
+                       "mock. Confirmed the real data/observatory.json file "
+                       "on disk was untouched after running the new toggle "
+                       "test (its enabled state read back identical "
+                       "before/after)"},
         ],
     },
 ]
