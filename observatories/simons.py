@@ -43,6 +43,7 @@ import time
 from telescope import Column, Signal, Telescope
 from telescope.events import ClimberRule, NewLeaderRule, ThresholdRule, money
 from telescope.http import try_json, try_text, xml_tag
+from telescope.parse import to_float
 from telescope.registry import register
 from telescope.series import Series, change, fetch_panel, historical_panel
 
@@ -74,13 +75,6 @@ WHALES = (
 )
 
 _INFO_TABLE_RE = re.compile(r"<infoTable>(.*?)</infoTable>", re.S | re.I)
-
-
-def _num(v):
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
 
 
 # The instrument panel. Deliberately broad but small enough to read at a glance.
@@ -305,7 +299,7 @@ class Simons(Telescope):
             cusip = xml_tag(block, "cusip")
             if not cusip:
                 continue
-            value = _num(xml_tag(block, "value")) or 0.0
+            value = to_float(xml_tag(block, "value")) or 0.0
             name = xml_tag(block, "nameOfIssuer") or cusip
             slot = out.setdefault(cusip, {"name": name, "value": 0.0})
             slot["value"] += value

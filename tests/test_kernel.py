@@ -20,6 +20,7 @@ from telescope import brief, http, notifier, ranking, registry    # noqa: E402
 from telescope import series                                     # noqa: E402
 from telescope.base import Telescope                             # noqa: E402
 from telescope.cache import Cache                                # noqa: E402
+from telescope.parse import to_float                             # noqa: E402
 from telescope.events import (ClimberRule, CrossoverRule, DeltaRule,  # noqa: E402
                               FlagFlipRule, NewEntrantRule, NewLeaderRule,
                               ThresholdRule)
@@ -921,6 +922,40 @@ def test_probe_text_makes_exactly_one_attempt():
                side_effect=requests.ConnectionError("boom")) as mock_get:
         assert http.probe_text("https://guessed-domain.test/") is None
     assert mock_get.call_count == 1
+
+
+# ── shared parsing helpers (telescope/http.py, telescope/parse.py) ──────
+def test_xml_tag_decodes_entities():
+    """SEC's XML legitimately escapes special characters in text content
+    (a raw "&" is illegal XML) -- caught live as a real bug: "JPMORGAN
+    CHASE & CO." extracted raw as "JPMORGAN CHASE &amp; CO." instead of
+    decoding back, which became a visible double-escaped glyph once the
+    frontend started HTML-escaping free text correctly. Both kepler.py's
+    Form D parsing and simons.py's 13F parsing had this exact bug before
+    being deduplicated into this one shared helper."""
+    xml = "<nameOfIssuer>JPMORGAN CHASE &amp; CO.</nameOfIssuer>"
+    assert http.xml_tag(xml, "nameOfIssuer") == "JPMORGAN CHASE & CO."
+
+
+def test_xml_tag_returns_none_when_tag_is_missing():
+    assert http.xml_tag("<a>x</a>", "b") is None
+
+
+def test_to_float_filters_nan():
+    """A raw NaN is a valid float() result by Python's own rules, so this
+    needs an explicit check -- some APIs use the literal string "NaN" as
+    a null sentinel, which would otherwise silently pass through as a
+    real-looking number instead of the absence of one. hubble.py's
+    original copy of this helper caught this; kepler.py's/simons.py's
+    didn't, until all three were deduplicated into this one."""
+    assert to_float("nan") is None
+    assert to_float(float("nan")) is None
+
+
+def test_to_float_handles_none_and_bad_types():
+    assert to_float(None) is None
+    assert to_float("not a number") is None
+    assert to_float("3.5") == 3.5
 
 
 # ── notifier ─────────────────────────────────────────────────────────────

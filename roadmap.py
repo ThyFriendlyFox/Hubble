@@ -1466,6 +1466,33 @@ PHASES = [
                        "security values before trusting the green result, "
                        "not just assuming the fix worked because the suite "
                        "passed"},
+            {"name": "Deduplicated a third copy of the numeric-coercion "
+                     "helper (hubble.py/kepler.py/simons.py) into the "
+                     "kernel", "done": True,
+             "detail": "auditing the fleet for other 'two+ telescopes have "
+                       "the same private helper' cases per convention #1 — "
+                       "the exact pattern that caught xml_tag()'s bug two "
+                       "iterations ago — found kepler.py's and simons.py's "
+                       "_num() were byte-for-byte identical, and hubble.py "
+                       "had its own _to_float() doing the same job with one "
+                       "real improvement neither of the others had: it "
+                       "filters NaN (float('nan') is a legitimately valid "
+                       "float by Python's own rules, so a raw API value "
+                       "using the literal string 'NaN' as a null sentinel "
+                       "would otherwise silently pass through as a real-"
+                       "looking number). New telescope/parse.py houses the "
+                       "unified to_float(), adopting hubble's stricter "
+                       "NaN-filtering behavior as canonical rather than "
+                       "the weaker duplicate — a small but real correctness "
+                       "improvement for Kepler/Simons, not just cleanup. "
+                       "Also closed a real test gap while here: xml_tag() "
+                       "itself (lifted into the kernel two iterations ago) "
+                       "had no direct kernel test despite fixing a real "
+                       "live bug — added one alongside to_float()'s tests. "
+                       "Also fixed HANDOFF.md's test count, stale again "
+                       "after the last two iterations' additions (was "
+                       "still showing 72+80, actually 72+86 before this "
+                       "iteration's 4 new kernel tests)"},
         ],
     },
 ]

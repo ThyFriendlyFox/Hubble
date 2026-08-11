@@ -100,6 +100,7 @@ from telescope import Column, Signal, Telescope
 from telescope.events import (ClimberRule, DeltaRule, FlagFlipRule,
                               NewEntrantRule, NewLeaderRule, money)
 from telescope.http import get_json, get_text, probe_text, try_json, xml_tag
+from telescope.parse import to_float
 from telescope.registry import get as get_telescope, is_enabled, register
 
 SEC_UA = {"User-Agent": "Observatory-Telescope/1.0 (thyfriendlyfox@gmail.com)"}
@@ -149,13 +150,6 @@ GROUP_TO_INDUSTRIES = {
     "SPACE": {"Other Technology", "Manufacturing"},
     "SECURITY": {"Technology", "Other Technology", "Computers"},
 }
-
-
-def _num(v):
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
 
 
 def _is_fund(name, industry):
@@ -398,8 +392,8 @@ class Kepler(Telescope):
         except Exception:
             return None
         industry = xml_tag(xml, "industryGroupType")
-        offering = _num(xml_tag(xml, "totalOfferingAmount"))
-        sold = _num(xml_tag(xml, "totalAmountSold"))
+        offering = to_float(xml_tag(xml, "totalOfferingAmount"))
+        sold = to_float(xml_tag(xml, "totalAmountSold"))
         first_sale = xml_tag(xml, "dateOfFirstSale") or ""
         m = re.search(r"<value>(\d{4}-\d{2}-\d{2})</value>", first_sale)
         return {
@@ -422,7 +416,7 @@ class Kepler(Telescope):
                 time.sleep(SEC_DELAY)
             return out
         # Unlike _domains()/_hiring(), _detail() only ever returns None on a
-        # genuine fetch failure (get_text() raising) -- xml_tag()/_num() are
+        # genuine fetch failure (get_text() raising) -- xml_tag()/to_float() are
         # regex/try-except helpers that never raise, so every filing whose
         # primary_doc.xml is actually reachable adds a real entry to out,
         # regardless of how sparse its individual fields are. An aggregate-

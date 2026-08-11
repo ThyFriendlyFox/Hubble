@@ -27,21 +27,14 @@ import re
 from telescope import Column, Signal, Telescope
 from telescope.events import ClimberRule, DeltaRule, NewEntrantRule, NewLeaderRule
 from telescope.http import try_json
+from telescope.parse import to_float
 from telescope.registry import register
-
-
-def _to_float(v):
-    try:
-        f = float(v)
-        return f if f == f else None  # filter NaN
-    except (TypeError, ValueError):
-        return None
 
 
 def _clean_price(v):
     """OpenRouter uses negative sentinels (e.g. -1000000) for variable/router
     pricing. Treat those as unknown so they don't skew price normalisation."""
-    f = _to_float(v)
+    f = to_float(v)
     return None if f is None or f < 0 else f
 
 
