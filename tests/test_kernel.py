@@ -848,6 +848,13 @@ def test_change_none_when_not_enough_history():
     assert change([1.0, 2.0], 5, "index") is None
 
 
+def test_change_none_when_old_value_is_zero():
+    """A genuine ZeroDivisionError guard, not just a defensive-looking
+    branch -- a rate hovering at exactly 0% or a newly-listed asset's first
+    reading are both real values this could hit."""
+    assert change([0.0, 5.0], 1, "index") is None
+
+
 def test_analyse_returns_none_below_min_points():
     s = Series("k", "K", "G", "index", "fred", "X")
     assert analyse(s, _synthetic_points(10), min_points=30) is None
@@ -865,6 +872,18 @@ def test_analyse_computes_a_real_row_from_synthetic_history():
     assert row["pctile"] == 100.0
     assert row["chg_1m"] == change([v for _, v in points], 21, "index")
     assert row["noise"] is False
+
+
+def test_analyse_computes_vol_ratio_from_varying_history():
+    """_synthetic_points()'s default constant step makes every first
+    difference identical, so pstdev(diffs) is always exactly 0 and
+    vol_ratio silently stays None in every other test here -- a real gap
+    found via coverage.py, not a guess. An alternating step gives genuine
+    variance to measure."""
+    s = Series("k", "K", "G", "index", "fred", "X")
+    points = [(f"d{i:04d}", 100.0 + (i % 2) * 5) for i in range(300)]
+    row = analyse(s, points, min_points=30)
+    assert row["vol_ratio"] is not None and row["vol_ratio"] > 0
 
 
 def test_historical_panel_reconstructs_one_reading_back():
@@ -940,6 +959,39 @@ def test_fetch_panel_keeps_stale_series_over_a_transient_outage():
             rows_after_outage = fetch_panel(scope, (s,), ttl=0, min_points=30)
         assert len(rows_after_outage) == 1
         assert rows_after_outage[0]["level"] == good_points[-1][1]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_fetch_panel_survives_one_series_adapter_raising():
+    """A single buggy/malformed-response adapter must not crash the whole
+    sweep -- go()'s try/except converts a raised exception into an empty
+    result for just that series, the same resilience shape panels() already
+    has for a broken secondary panel (checked live via coverage.py: this
+    except Exception branch had never actually been exercised by either
+    test suite despite existing specifically to prevent one dead ticker
+    from blanking Simons'/Reddington's entire board)."""
+    class FakeScope:
+        def __init__(self, cache):
+            self.cache = cache
+
+    tmp = tempfile.mkdtemp()
+    try:
+        cache = Cache("test_fetch_panel_raise_ns")
+        cache.dir = tmp
+        scope = FakeScope(cache)
+        broken = Series("broken", "Broken", "G", "index", "fred", "X")
+        good = Series("good", "Good", "G", "index", "yahoo", "Y")
+        good_points = _synthetic_points(60)
+
+        def raises(ident):
+            raise ValueError("malformed response")
+
+        with patch.dict(series.ADAPTERS,
+                        {"fred": raises, "yahoo": lambda ident: good_points}):
+            rows = fetch_panel(scope, (broken, good), ttl=3600, min_points=30)
+        assert len(rows) == 1
+        assert rows[0]["key"] == "good"
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
