@@ -7,6 +7,7 @@ rule's firing conditions.
 import os
 import sys
 import threading
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -411,6 +412,51 @@ def test_cache_set_survives_concurrent_writers_on_the_same_key():
 
         assert not errors, f"concurrent set() raised: {errors}"
         assert cache.get("k", 3600)["v"] in range(16)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_cache_cached_prevents_a_stampede_on_a_cold_cache():
+    """Found live, not in a test: two concurrent requests to the same
+    telescope with a cold cache -- a real scenario, the poller and a page
+    load (or two browser tabs) landing close together -- each independently
+    ran the full, slow producer in parallel, since cached() had no
+    protection beyond the tmp-path fix above (which only guards concurrent
+    *writers*, not concurrent *cache-miss callers*). For a telescope with a
+    strict per-request rate limit (Holmdel's GitHub/arXiv sources), two
+    redundant sweeps racing the same limit make each other's rate-limiting
+    worse, not just waste the extra requests -- confirmed live: a real
+    request that should take at most a few minutes never returned even
+    after 15. Every concurrent caller must see the producer run exactly
+    once and all get back its result, not each pay the full cost."""
+    tmp = tempfile.mkdtemp()
+    try:
+        cache = Cache("test_ns")
+        cache.dir = tmp
+        calls = {"n": 0}
+        call_lock = threading.Lock()
+
+        def slow_producer():
+            with call_lock:
+                calls["n"] += 1
+            time.sleep(0.2)
+            return {"v": "real"}
+
+        results, results_lock = [], threading.Lock()
+
+        def read():
+            r = cache.cached("k", 3600, slow_producer)
+            with results_lock:
+                results.append(r)
+
+        threads = [threading.Thread(target=read) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert calls["n"] == 1, f"producer ran {calls['n']} times, expected exactly once"
+        assert results == [{"v": "real"}] * 8
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

@@ -18,6 +18,12 @@ class Cache:
         # (os.path.exists on a path under it just returns False), so only
         # set() actually needs it to exist.
         self.dir = os.path.join(ROOT, namespace)
+        # Guards cached() specifically -- see its own docstring. Not held
+        # during get()/set() on their own, so a producer's own direct
+        # self.cache.set() calls (Jackson's/Simons' event-tracking keys, for
+        # instance) never risk deadlocking against a lock this same thread
+        # already holds.
+        self._lock = threading.Lock()
 
     def _path(self, key):
         return os.path.join(self.dir, f"{key}.json")
@@ -67,15 +73,30 @@ class Cache:
         result looks like a total failure and an older file still exists on
         disk, that stale-but-real value is served instead and the miss is
         retried on the next call rather than written over.
+
+        Whole-method lock, not just around the write: found live, not in a
+        test — two concurrent requests hitting the same telescope with a
+        cold cache (a real scenario: the poller and a page load, or two
+        browser tabs, landing close together) each independently ran the
+        full producer, in parallel, for every source. For Holmdel that means
+        two entire 6-source sweeps racing each other against GitHub's strict
+        10 req/min limit and arXiv's own undocumented throttle at once —
+        each one making the other's rate-limiting worse, not just wasting
+        the redundant requests. The second caller now blocks on the lock
+        instead of piling on; re-checking get() after acquiring it (not
+        just once at the top) is what makes that block turn into a cache
+        hit instead of a second redundant producer() call once the first
+        caller's result has landed.
         """
-        hit = self.get(key, ttl)
-        if hit is not None:
-            return hit
-        fresh = producer()
-        if is_empty and is_empty(fresh) and os.path.exists(self._path(key)):
-            try:
-                with open(self._path(key), encoding="utf-8") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, OSError):
-                pass
-        return self.set(key, fresh)
+        with self._lock:
+            hit = self.get(key, ttl)
+            if hit is not None:
+                return hit
+            fresh = producer()
+            if is_empty and is_empty(fresh) and os.path.exists(self._path(key)):
+                try:
+                    with open(self._path(key), encoding="utf-8") as f:
+                        return json.load(f)
+                except (json.JSONDecodeError, OSError):
+                    pass
+            return self.set(key, fresh)

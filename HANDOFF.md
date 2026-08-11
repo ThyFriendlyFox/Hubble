@@ -8,7 +8,7 @@ system is), `TELESCOPES.md` (why the pattern is shaped this way) and
 
 Six telescopes run on live public data, no API keys. Kernel in `telescope/`,
 one domain pack per telescope in `observatories/`, one generic frontend driven
-entirely by telescope metadata. 118 kernel tests + 101 domain-pack tests +
+entirely by telescope metadata. 119 kernel tests + 101 domain-pack tests +
 92 live tests (all three suites grow as the build continues — check the
 actual count with `-q`, don't trust this number for long).
 
@@ -94,8 +94,25 @@ currently-live signal) entirely, and several documented events (`rising_
 vendor`, `flow_reversal`, `congestion_alert`) were never built while real
 shipped ones (`stealth_graduated`, `new_program`/`budget_shift`) were
 missing. Corrected against the real `observatories/*.py` declarations,
-verified by grep, not memory. `roadmap.py`'s own Phase 5 (and now 6)
-entries are the detailed log — this is only the
+verified by grep, not memory. Phase 7 tried a third avenue: actually
+opening the live dev server in a real browser and clicking through
+it — the first iteration in this whole build to do that, rather than
+only reading or testing the code. Every tab rendered correctly
+(re-ranking on a weight slider, the filter box, WHAT'S NEW/BRIEF/
+TELESCOPES/ROADMAP) except Holmdel's board, which hung indefinitely.
+The cause: `Cache.cached()` had no protection against a cache
+stampede — a cold cache plus concurrent callers (the poller and a
+page load, or two browser tabs) meant every caller independently
+re-ran the full producer in parallel, and for Holmdel that meant
+multiple complete sweeps racing GitHub's 10 req/min limit and arXiv's
+own throttle at once, each making the others' rate-limiting worse.
+Fixed with a lock around the whole get-or-produce sequence, re-
+checking `get()` after acquiring it so a blocked second caller becomes
+a cache hit instead of a second redundant fetch — a different failure
+mode from the `Cache.set()` tmp-path race fixed in Phase 5 (that one
+was concurrent *writers* colliding; this one is concurrent cache-*miss*
+callers each redundantly paying the full cost). `roadmap.py`'s own
+Phase 5, 6 and 7 entries are the detailed log — this is only the
 shape of it.
 
 Work is on branch `claude/telescope-dashboard-concept-lo1ay8`, open as **PR #1**.
@@ -149,13 +166,19 @@ is a documented, judged omission: thread/process lifecycle code, an
 optional dependency, SEC-index-parsing plumbing). Don't reach for "extend
 test coverage" as the default next move anymore — it'll mostly find
 nothing, because there's nothing left to find that way. `static/app.js`
-(826 lines, the whole frontend) has never been tested at all and is a
-real gap, but introducing a JS test framework is a bigger decision than a
-single iteration should make unilaterally — surface it as an option, don't
-just start installing a dependency. `roadmap.py`'s own Phase 5 entries are
-a log of the kind of iteration that still fits this section — read a few
-before starting to calibrate scope and the level of live verification
-expected.
+(826 lines, the whole frontend) has never had *automated* coverage of any
+kind, and introducing a formal JS test framework is a bigger, dependency-
+adding decision than a single iteration should make unilaterally — surface
+it as an option, don't just start installing one. But hands-on functional
+testing needs no new dependency at all, and Phase 7 proved it's not just
+theoretically available: opening the dev server in a real browser and
+clicking through every tab found a genuine concurrency bug (a cache
+stampede in `Cache.cached()`) that neither the coverage.py sweep nor the
+documentation audit could have — it only manifests when a real cold cache
+meets real concurrent requests, not in a unit test with one caller. `roadmap.py`'s
+own Phase 5, 6 and 7 entries are a log of the kind of iteration that still
+fits this section — read a few before starting to calibrate scope and the
+level of live verification expected.
 
 The "verify a documentation file" fallback has now had its first real pass
 too (Phase 6): `TELESCOPES.md`'s §3 fleet tables and `README.md`'s Tests/
@@ -168,6 +191,17 @@ its own; `app.js`/`style.css`/`index.html` have no prose docs to drift
 from; a systematic read of every domain pack's own module docstring against
 its current `observatories/*.py` body hasn't been done as its own pass —
 plausible next candidate if this fallback comes up again.
+
+The "drive the dashboard in a real browser" fallback (Phase 7) has had one
+real pass, not a systematic one — it stopped at the first real bug found
+(the cache stampede), not after confirming every tab/interaction across
+every telescope. A fuller pass (every telescope's board, not just Kepler's;
+the SAVE VIEW / watched-only / hide-noise controls; actually toggling a
+telescope off and back on; dark-mode or narrow-viewport rendering) is a
+plausible next candidate, and re-checking Holmdel's board specifically is
+worth doing once GitHub's rate limit this session's own testing likely
+triggered has had time to clear — that's an external, temporary condition,
+not something to chase further right now.
 
 ## Then work the roadmap
 
