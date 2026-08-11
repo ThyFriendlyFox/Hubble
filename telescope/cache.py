@@ -1,6 +1,7 @@
 """Namespaced TTL disk cache. Each telescope gets its own directory."""
 import json
 import os
+import threading
 import time
 
 ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
@@ -35,9 +36,15 @@ class Cache:
             return None
 
     def set(self, key, value):
+        # tmp includes pid+thread id: a background poller sweep and a
+        # manual refresh can legitimately race on the same key (e.g. a
+        # ?refresh=1 request's announce-sweep thread landing mid-poll), and
+        # a shared ".tmp" name meant the loser's os.replace() found its own
+        # tmp file already consumed by the winner -- FileNotFoundError, not
+        # a stale-cache problem this class otherwise guards against.
         os.makedirs(self.dir, exist_ok=True)
         p = self._path(key)
-        tmp = p + ".tmp"
+        tmp = f"{p}.{os.getpid()}.{threading.get_ident()}.tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(value, f)
         os.replace(tmp, p)

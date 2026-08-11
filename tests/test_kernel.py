@@ -6,6 +6,7 @@ rule's firing conditions.
 """
 import os
 import sys
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -378,6 +379,38 @@ def test_cache_get_treats_a_corrupted_file_as_a_miss():
         with open(cache._path("k"), "w", encoding="utf-8") as f:
             f.write("{not valid json")
         assert cache.get("k", 3600) is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_cache_set_survives_concurrent_writers_on_the_same_key():
+    """Found live: a ?refresh=1 request's background announce-sweep thread
+    racing a second forced sweep of the same telescope crashed with
+    FileNotFoundError, because set() wrote every key to a single shared
+    "<key>.tmp" path -- the loser's os.replace() found its own tmp file
+    already consumed by the winner's rename. Two real threads hammering the
+    same key concurrently must all succeed and leave a valid last-write-
+    wins value on disk, not race on the tmp filename."""
+    tmp = tempfile.mkdtemp()
+    try:
+        cache = Cache("test_ns")
+        cache.dir = tmp
+        errors = []
+
+        def write(n):
+            try:
+                cache.set("k", {"v": n})
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=write, args=(n,)) for n in range(16)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"concurrent set() raised: {errors}"
+        assert cache.get("k", 3600)["v"] in range(16)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

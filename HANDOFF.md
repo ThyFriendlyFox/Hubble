@@ -8,7 +8,7 @@ system is), `TELESCOPES.md` (why the pattern is shaped this way) and
 
 Six telescopes run on live public data, no API keys. Kernel in `telescope/`,
 one domain pack per telescope in `observatories/`, one generic frontend driven
-entirely by telescope metadata. 117 kernel tests + 86 live tests (both suites
+entirely by telescope metadata. 118 kernel tests + 92 live tests (both suites
 grow as the build continues — check the actual count with `-q`, don't trust
 this number for long).
 
@@ -39,7 +39,13 @@ took every file in `telescope/` from unmeasured to individually audited —
 7 of 11 now sit at 100%, the package as a whole at ~92%, and every remaining
 gap is a deliberately-judged omission (an optional dependency not installed,
 a rare double-failure edge case, or genuinely network-bound adapter code
-already covered by `test_live.py` instead) rather than an oversight.
+already covered by `test_live.py` instead) rather than an oversight. The same
+sweep then extended to `app.py` (69% -> 75%, every remaining line a real
+thread/process-lifecycle omission) and, in the process of testing `?refresh=1`,
+surfaced and fixed a genuine concurrency bug: `Cache.set()` wrote every key to
+one shared `.tmp` path, so a background poller sweep racing a manual refresh
+of the same telescope could crash with `FileNotFoundError` — not
+test-only, a real production race. Fixed with a per-writer-unique tmp path.
 `roadmap.py`'s own Phase 5 entries are the detailed log — this is only the
 shape of it.
 

@@ -398,6 +398,107 @@ def test_api_brief_send_dispatches_without_error(client):
     assert isinstance(data["text"], str) and data["text"]
 
 
+def test_index_serves_the_dashboard_page(client):
+    """The one route every other test bypasses by going straight for the
+    API -- '/' itself had no coverage in either suite."""
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert b"THE OBSERVATORY" in resp.data
+
+
+def test_api_observatory_feed_skips_a_slug_that_vanishes_mid_merge(client, monkeypatch):
+    """api_observatory_feed() re-fetches each enabled telescope with a fresh
+    registry.get() call per slug rather than reusing enabled_slugs()'s
+    snapshot -- the except KeyError: continue guards against a slug that's
+    toggled off between those two calls. That race is real but not
+    reproducible from two normal requests, so it's simulated directly:
+    registry.get() is monkeypatched to raise KeyError for one real slug
+    while every other slug resolves normally, and the merged feed must
+    still come back 200 with the surviving telescopes' events intact."""
+    real_get = registry.get
+
+    def flaky_get(slug):
+        if slug == "hubble":
+            raise KeyError(slug)
+        return real_get(slug)
+
+    monkeypatch.setattr(registry, "get", flaky_get)
+    resp = client.get("/api/observatory/whats-new")
+    assert resp.status_code == 200
+    assert isinstance(resp.get_json()["events"], list)
+
+
+def test_api_telescope_returns_502_when_view_raises(client, monkeypatch):
+    """The one failure path api_telescope() has beyond _resolve(): a real
+    exception out of scope.view() must come back as a well-formed 502
+    rather than an unhandled 500, and still carry scope.meta() so the
+    frontend has something to show."""
+    scope = registry.get("reddington")
+
+    def boom(**kwargs):
+        raise RuntimeError("simulated view() failure")
+
+    monkeypatch.setattr(scope, "view", boom)
+    resp = client.get("/api/telescope/reddington")
+    assert resp.status_code == 502
+    data = resp.get_json()
+    assert data["error"] == "simulated view() failure"
+    assert data["rows"] == []
+    assert data["telescope"]["slug"] == "reddington"
+
+
+def test_api_telescope_refresh_forces_a_sweep_via_the_main_route(client):
+    """force=True is reachable two ways: the dedicated /sweep route (tested
+    below) and ?refresh=1 on the normal GET, which also kicks off the
+    background announce-sweep thread -- only the /sweep path had coverage.
+    Reddington again for speed (~6s, unpaced, few gauges)."""
+    resp = client.get("/api/telescope/reddington?refresh=1")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["telescope"]["slug"] == "reddington"
+    assert isinstance(data["rows"], list)
+
+
+def test_api_telescope_feed_disabled_and_unknown_slugs(client):
+    """api_telescope_feed() runs its own _resolve() call -- the 409/404
+    branches were only ever exercised through the main telescope route and
+    the /sweep route, never through /whats-new itself."""
+    resp = client.get("/api/telescope/does-not-exist/whats-new")
+    assert resp.status_code == 404
+
+    tmp_dir = tempfile.mkdtemp()
+    orig_state_file = registry.STATE_FILE
+    registry.STATE_FILE = os.path.join(tmp_dir, "observatory.json")
+    try:
+        registry.set_enabled("hubble", False)
+        resp = client.get("/api/telescope/hubble/whats-new")
+        assert resp.status_code == 409
+        assert resp.get_json()["disabled"] is True
+    finally:
+        registry.STATE_FILE = orig_state_file
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def test_api_sweep_disabled_and_unknown_slugs(client):
+    """Same _resolve() branches as above, this time through /sweep -- the
+    existing sweep test only covers the success path on an enabled
+    telescope."""
+    resp = client.post("/api/telescope/does-not-exist/sweep")
+    assert resp.status_code == 404
+
+    tmp_dir = tempfile.mkdtemp()
+    orig_state_file = registry.STATE_FILE
+    registry.STATE_FILE = os.path.join(tmp_dir, "observatory.json")
+    try:
+        registry.set_enabled("hubble", False)
+        resp = client.post("/api/telescope/hubble/sweep")
+        assert resp.status_code == 409
+        assert resp.get_json()["disabled"] is True
+    finally:
+        registry.STATE_FILE = orig_state_file
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 def test_api_sweep_forces_a_real_sweep_and_returns_the_right_shape(client):
     """The one route the tests above don't reach: /sweep forces a real
     collect(force=True) and writes a real snapshot, unlike every GET above
