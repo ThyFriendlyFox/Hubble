@@ -817,6 +817,126 @@ def test_panels_swallows_a_broken_context_instead_of_crashing_the_view():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ── Telescope base class: defaults and machinery ─────────────────────────
+# base.py is the single most load-bearing file in the kernel -- every domain
+# pack inherits it -- and coverage.py found several of its own methods had
+# never been exercised directly, only incidentally through other tests that
+# happened not to hit these specific branches.
+def test_collect_is_not_implemented_by_default():
+    """The one method every domain pack MUST override -- confirms the base
+    class fails loudly, not silently, if a pack forgets to."""
+    try:
+        Telescope().collect()
+        assert False, "expected NotImplementedError"
+    except NotImplementedError:
+        pass
+
+
+def test_context_returns_none_by_default():
+    """panels()'s None/dict/list normalisation was already tested via a
+    patched lambda; the base class's own actual default had never been
+    hit directly."""
+    assert Telescope().context() is None
+
+
+def test_ttl_returns_zero_when_forced_else_cache_ttl():
+    scope = Telescope()
+    assert scope.ttl(force=True) == 0
+    assert scope.ttl(force=False) == scope.cache_ttl
+
+
+def test_age_rounds_seconds_since_cache_write_and_none_when_missing():
+    """_age() feeds view()'s freshness readout shown on every board -- had
+    no test of its own at all."""
+    class Scope(Telescope):
+        slug = "test_age_ns"
+
+    scope, tmp = _isolated_scope(Scope)
+    try:
+        assert scope._age("missing") is None
+        scope.cache.set("k", {"v": 1})
+        age = scope._age("k")
+        assert age is not None and 0 <= age < 5
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_maybe_backfill_skips_calling_historical_rows_once_history_exists():
+    """A distinct guard from SnapshotStore.seed()'s own overwrite check
+    (already tested elsewhere): _maybe_backfill() must not even CALL
+    historical_rows() once real history exists, not just rely on seed() to
+    neutralise its result -- historical_rows() can be a real, non-trivial
+    computation in a domain pack, not free to call speculatively every
+    sweep."""
+    calls = {"n": 0}
+
+    class Scope(Telescope):
+        slug = "test_backfill_skip_ns"
+        signals = (Signal("v", "value", "VALUE"),)
+        default_weights = {"v": 100}
+        snapshot_fields = ("value",)
+
+        def collect(self, force=False):
+            return [{"key": "a", "name": "A", "value": 10,
+                     "noise": False, "sources": ["x"], "link": ""}]
+
+        def historical_rows(self, rows):
+            calls["n"] += 1
+            return [{"key": "a", "name": "A", "value": 1,
+                     "noise": False, "sources": ["x"], "link": ""}]
+
+    scope, tmp = _isolated_scope(Scope)
+    try:
+        scope.sweep()
+        assert calls["n"] == 1
+        scope.sweep()   # real history now exists
+        assert calls["n"] == 1   # historical_rows() must not run again
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+class _RecordingNotifier:
+    def __init__(self):
+        self.calls = []
+
+    def dispatch(self, events, scope):
+        self.calls.append((events, scope))
+
+
+def test_sweep_dispatches_to_notifier_when_events_fire():
+    """sweep()'s own notifier.dispatch() call -- every other sweep test
+    passes notifier=None, so this specific call had never actually run."""
+    calls = {"n": 0}
+
+    class Scope(Telescope):
+        slug = "test_sweep_notify_ns"
+        signals = (Signal("v", "value", "VALUE"),)
+        default_weights = {"v": 100}
+        rules = (NewLeaderRule(),)
+        snapshot_fields = ("value",)
+
+        def collect(self, force=False):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return [{"key": "a", "name": "A", "value": 10,
+                         "noise": False, "sources": ["x"], "link": ""}]
+            return [{"key": "b", "name": "B", "value": 20,
+                     "noise": False, "sources": ["x"], "link": ""},
+                    {"key": "a", "name": "A", "value": 5,
+                     "noise": False, "sources": ["x"], "link": ""}]
+
+    scope, tmp = _isolated_scope(Scope)
+    try:
+        notifier = _RecordingNotifier()
+        scope.sweep(notifier)   # first sweep: nothing to diff against yet
+        assert notifier.calls == []
+        events = scope.sweep(notifier)   # second sweep: leader changes a -> b
+        assert events
+        assert notifier.calls == [(events, scope)]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_crossover_rule_reads_leading_from_prev_and_lagging_from_curr():
     """Holmdel's 'research -> builders' shape: unlike every other rule, the
     two fields it compares live at two different points in time."""

@@ -8,7 +8,7 @@ system is), `TELESCOPES.md` (why the pattern is shaped this way) and
 
 Six telescopes run on live public data, no API keys. Kernel in `telescope/`,
 one domain pack per telescope in `observatories/`, one generic frontend driven
-entirely by telescope metadata. 103 kernel tests + 86 live tests (both suites
+entirely by telescope metadata. 109 kernel tests + 86 live tests (both suites
 grow as the build continues — check the actual count with `-q`, don't trust
 this number for long).
 
