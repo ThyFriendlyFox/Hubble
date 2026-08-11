@@ -5,6 +5,25 @@
 
 const $ = (s) => document.querySelector(s);
 
+/* Every telescope name/tagline/caveat/event headline/roadmap note below is
+   free-form prose written server-side (roadmap.py, observatories/*.py) and
+   gets interpolated straight into innerHTML — with no escaping, a stray "<"
+   in that prose (e.g. "verified against the homepage's own <title> tag")
+   is parsed as real markup. <title> specifically has "consume everything
+   until literal </title>" parsing rules, which silently ate the rest of
+   the ROADMAP tab's content, confirmed live. Not a security boundary
+   (nothing here is attacker-controlled), just correctness -- but the same
+   fix either way. */
+function esc(s) {
+  if (s === null || s === undefined) return "";
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 let state = {
   scopes: [],          // catalog
   slug: null,          // active telescope
@@ -93,11 +112,11 @@ function fmtSigned(n) {
 }
 function fmtText(s) {
   if (s === null || s === undefined || s === "") return "<span class=dim>—</span>";
-  return String(s);
+  return esc(s);
 }
 function fmtUrl(u) {
   if (!u) return "<span class=dim>—</span>";
-  return `<a href="https://${u}" target="_blank" rel="noopener">${u}</a>`;
+  return `<a href="https://${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`;
 }
 const FORMATTERS = {
   num: fmtNum, int: fmtInt, money: fmtMoney, price: fmtPrice,
@@ -135,7 +154,7 @@ function buildTip(row) {
   const rowsHtml = entries
     .map(
       (b) => `<div class="ct-row">
-        <span class="ct-label">${b.label}</span>
+        <span class="ct-label">${esc(b.label)}</span>
         <span class="ct-raw">${fmtRaw(b.field, b.raw)}</span>
         <span class="ct-weight">×${b.weight}</span>
         <span class="ct-pts">${b.points.toFixed(1)}</span>
@@ -147,12 +166,12 @@ function buildTip(row) {
     const meta = state.meta || {};
     const qualityLabels = (meta.signals || [])
       .filter((s) => (meta.quality_signals || []).includes(s.key))
-      .map((s) => s.label);
+      .map((s) => esc(s.label));
     dampenNote = `<div class="ct-formula"><span class="ct-dampen">⚠ ×${meta.dampen}</span> — no independent evidence present (needs one of: ${qualityLabels.join(", ") || "a quality signal"}).</div>`;
   }
   return `
     <div class="ct-head">
-      <span class="ct-name">${row.name || ""}</span>
+      <span class="ct-name">${esc(row.name) || ""}</span>
       <span class="ct-score">${row.score ?? "—"}<span>/100</span></span>
     </div>
     <div class="ct-colheads"><span>SIGNAL</span><span>RAW</span><span>WEIGHT</span><span>PTS</span></div>
@@ -228,9 +247,9 @@ function renderStrip() {
       (s) => `<button class="scope-chip ${s.enabled ? "" : "off"} ${
         s.slug === state.slug ? "active" : ""
       }" data-slug="${s.slug}" ${s.enabled ? "" : "disabled"}
-        title="${s.enabled ? s.tagline : "DISABLED — enable under TELESCOPES"}">
-        <span class="g">${s.glyph}</span>${s.name}
-        <span class="dom">${s.domain}</span>
+        title="${s.enabled ? esc(s.tagline) : "DISABLED — enable under TELESCOPES"}">
+        <span class="g">${s.glyph}</span>${esc(s.name)}
+        <span class="dom">${esc(s.domain)}</span>
       </button>`
     )
     .join("");
@@ -254,16 +273,16 @@ function renderScopeGrid() {
       (s) => `<div class="scope-card ${s.enabled ? "on" : ""}">
         <div class="sc-head">
           <span class="sc-glyph">${s.glyph}</span>
-          <span class="sc-name">${s.name}</span>
+          <span class="sc-name">${esc(s.name)}</span>
           <label class="switch">
             <input type="checkbox" data-toggle="${s.slug}" ${s.enabled ? "checked" : ""}>
             <span class="slider"></span>
           </label>
         </div>
-        <div class="sc-domain">${s.domain} · ${s.entity_label}</div>
-        <div class="sc-tagline">${s.tagline}</div>
-        <div class="sc-sources">${s.sources_label || ""}</div>
-        ${s.caveat ? `<div class="sc-caveat">${s.caveat}</div>` : ""}
+        <div class="sc-domain">${esc(s.domain)} · ${esc(s.entity_label)}</div>
+        <div class="sc-tagline">${esc(s.tagline)}</div>
+        <div class="sc-sources">${esc(s.sources_label) || ""}</div>
+        ${s.caveat ? `<div class="sc-caveat">${esc(s.caveat)}</div>` : ""}
         <div class="sc-poll">SWEEPS EVERY ${Math.round(s.poll_seconds / 3600)}H</div>
       </div>`
     )
@@ -346,7 +365,7 @@ function applyIdentity(data) {
   $("#table-label").textContent = `FULL INDEX · ${m.entity_label}`;
   const cav = $("#caveat");
   if (m.caveat) {
-    cav.innerHTML = `<b>WHAT THIS INSTRUMENT CAN'T SEE —</b> ${m.caveat}`;
+    cav.innerHTML = `<b>WHAT THIS INSTRUMENT CAN'T SEE —</b> ${esc(m.caveat)}`;
     cav.hidden = false;
   } else cav.hidden = true;
   const ages = Object.entries(data.ages || {})
@@ -362,7 +381,7 @@ function renderHead() {
     cols
       .map(
         (c) =>
-          `<th class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}" data-sort="${c.field}">${c.label}</th>`
+          `<th class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}" data-sort="${c.field}">${esc(c.label)}</th>`
       )
       .join("");
   $("#thead-row").querySelectorAll("th[data-sort]").forEach((th) => {
@@ -381,7 +400,7 @@ function renderWeights() {
     .map((s) => {
       const v = state.weights[s.key] ?? 0;
       return `<div class="weight">
-        <label>${s.label} <b id="wv-${s.key}">${v}</b></label>
+        <label>${esc(s.label)} <b id="wv-${s.key}">${v}</b></label>
         <input type="range" min="0" max="50" value="${v}" data-w="${s.key}">
       </div>`;
     })
@@ -425,7 +444,7 @@ function renderViews() {
     views
       .map(
         (v, i) => `<span class="view-chip" data-i="${i}">
-          <b data-i="${i}" title="Apply this view">${v.name}</b>
+          <b data-i="${i}" title="Apply this view">${esc(v.name)}</b>
           <span class="del" data-i="${i}" title="Delete this view">×</span>
         </span>`
       )
@@ -503,12 +522,12 @@ function podium(rows) {
   $("#podium").innerHTML = top
     .map((r, i) => {
       const stats = statCols
-        .map((c) => `${c.label} <b>${cell(r, c)}</b>`)
+        .map((c) => `${esc(c.label)} <b>${cell(r, c)}</b>`)
         .join("&nbsp;&nbsp;·&nbsp;&nbsp;");
       const pct = (r.score / maxScore) * 100;
       const name = r.link
-        ? `<a href="${r.link}" target="_blank" rel="noopener">${r.name}</a>`
-        : r.name;
+        ? `<a href="${r.link}" target="_blank" rel="noopener">${esc(r.name)}</a>`
+        : esc(r.name);
       return `<div class="pod rank-${i + 1}">
         <div class="pod-place">${place[i]}</div>
         <div class="pod-score" data-key="${r.key}">${r.score}<span class="pod-score-x">/100</span></div>
@@ -535,8 +554,8 @@ function render() {
         .map((c) => {
           if (c.field === "name") {
             const inner = r.link
-              ? `<a href="${r.link}" target="_blank" rel="noopener">${r.name}</a>`
-              : r.name;
+              ? `<a href="${r.link}" target="_blank" rel="noopener">${esc(r.name)}</a>`
+              : esc(r.name);
             return `<td class="left name">${inner}${
               r.stealth ? ' <span class="badge">STEALTH</span>' : ""
             }</td>`;
@@ -583,7 +602,7 @@ function renderPanel() {
       const head = p.columns
         .map(
           (c) =>
-            `<th class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}" data-panel="${i}" data-sort="${c.field}">${c.label}</th>`
+            `<th class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}" data-panel="${i}" data-sort="${c.field}">${esc(c.label)}</th>`
         )
         .join("");
       const body = rows
@@ -597,11 +616,11 @@ function renderPanel() {
         )
         .join("");
       return `<section>
-        <div class="section-label"><span>${String(4 + i).padStart(2, "0")}</span> <em>${p.title}</em></div>
+        <div class="section-label"><span>${String(4 + i).padStart(2, "0")}</span> <em>${esc(p.title)}</em></div>
         <div class="table-wrap">
           <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
         </div>
-        <div class="status">${p.subtitle || ""}</div>
+        <div class="status">${esc(p.subtitle) || ""}</div>
       </section>`;
     })
     .join("");
@@ -656,18 +675,20 @@ function renderFeed() {
   }
   el.innerHTML = events
     .map((e) => {
+      const escHeadline = esc(e.headline);
+      const escName = esc(e.name);
       const head = e.link
-        ? e.headline.replace(
-            e.name,
-            `<a href="${e.link}" target="_blank" rel="noopener">${e.name}</a>`
+        ? escHeadline.replace(
+            escName,
+            `<a href="${e.link}" target="_blank" rel="noopener">${escName}</a>`
           )
-        : e.headline;
+        : escHeadline;
       const watched = isWatched(e.telescope, e.key);
       return `<div class="feed-item t-${e.type}${watched ? " watched" : ""}">
         <span class="dot"></span>
         ${watched ? '<span class="wstar" title="On your watchlist">★</span>' : ""}
-        <span class="escope">${e.glyph || "🔭"} ${e.telescope_name || e.telescope || ""}</span>
-        <span class="etype">${ETYPE_LABEL[e.type] || e.type}</span>
+        <span class="escope">${e.glyph || "🔭"} ${esc(e.telescope_name || e.telescope) || ""}</span>
+        <span class="etype">${esc(ETYPE_LABEL[e.type] || e.type)}</span>
         <span class="ehead">${head}</span>
         <span class="etime">${ago(Date.now() / 1000 - e.ts)}</span>
       </div>`;
@@ -685,15 +706,15 @@ async function loadRoadmap() {
     el.innerHTML = data.phases
       .map(
         (p) => `<div class="rm-phase">
-          <div class="rm-head"><span class="rm-status s-${p.status}">${p.status}</span>
-            <span class="rm-title">${p.title}</span></div>
-          <div class="rm-note">${p.note || ""}</div>
+          <div class="rm-head"><span class="rm-status s-${p.status}">${esc(p.status)}</span>
+            <span class="rm-title">${esc(p.title)}</span></div>
+          <div class="rm-note">${esc(p.note) || ""}</div>
           <ul class="rm-items">${p.items
             .map(
               (i) =>
                 `<li class="i-${i.done ? "done" : "todo"}"><span class="mark">${
                   i.done ? "▰" : "▱"
-                }</span> <b>${i.name}</b>${i.detail ? ` — ${i.detail}` : ""}</li>`
+                }</span> <b>${esc(i.name)}</b>${i.detail ? ` — ${esc(i.detail)}` : ""}</li>`
             )
             .join("")}</ul>
         </div>`
@@ -723,15 +744,15 @@ async function loadBrief() {
     el.innerHTML = data.sections
       .map((s) => {
         const lead = s.leader
-          ? `<b>${s.leader.name}</b> <span class="brief-score">${s.leader.score}</span>`
+          ? `<b>${esc(s.leader.name)}</b> <span class="brief-score">${s.leader.score}</span>`
           : `<span class="dim">no leader yet</span>`;
         const events =
-          s.top_events.map((e) => `<li>${e.headline}</li>`).join("") ||
+          s.top_events.map((e) => `<li>${esc(e.headline)}</li>`).join("") ||
           `<li class="dim">nothing new</li>`;
         return `<div class="brief-section">
           <div class="brief-head">
             <span class="brief-glyph">${s.glyph}</span>
-            <span class="brief-name">${s.name}</span>
+            <span class="brief-name">${esc(s.name)}</span>
             <span class="brief-count">${s.event_count} NEW</span>
           </div>
           <div class="brief-lead">${lead}</div>
