@@ -1248,6 +1248,31 @@ PHASES = [
                        "on disk was untouched after running the new toggle "
                        "test (its enabled state read back identical "
                        "before/after)"},
+            {"name": "Direct kernel tests for telescope/snapshots.py",
+             "done": True,
+             "detail": "SnapshotStore backs store.latest() (relied on by "
+                       "brief.py and every cross-telescope panel fixed "
+                       "earlier this session), record()'s diff/dedupe, and "
+                       "seed()'s 'never overwrite real history' backfill "
+                       "guarantee — genuinely load-bearing kernel behaviour "
+                       "that, on inspection, had zero direct tests of its "
+                       "own, only indirect coverage through Telescope."
+                       "sweep() in the existing backfill tests (which only "
+                       "exercises the first-sweep-with-seed path, not "
+                       "latest()/count()/the unchanged-skip optimization/"
+                       "seed()'s overwrite guard/load_events() truncation "
+                       "and ordering). Added six tests exercising each "
+                       "directly, isolated via the same store.dir/"
+                       "events_file tempdir redirection already used by "
+                       "_isolated_scope(). Caught one real footgun while "
+                       "writing them: two record() calls in the same test "
+                       "can land on the same millisecond-granularity "
+                       "snapshot filename and silently overwrite each "
+                       "other — never a real risk in production (sweeps "
+                       "are hours apart) but a real risk in a fast unit "
+                       "test, so time.time() is mocked to strictly-"
+                       "increasing values wherever a test calls record() "
+                       "more than once"},
         ],
     },
 ]

@@ -26,6 +26,7 @@ from telescope.events import (ClimberRule, CrossoverRule, DeltaRule,  # noqa: E4
 from telescope.ranking import Signal                             # noqa: E402
 from telescope.series import (Series, analyse, change,               # noqa: E402
                               fetch_panel, historical_panel)
+from telescope.snapshots import SnapshotStore                       # noqa: E402
 
 SIGNALS = (
     Signal("a", "a", "A"),
@@ -222,6 +223,112 @@ def test_cache_writes_empty_result_when_nothing_cached_yet():
         cache = Cache("test_ns")
         cache.dir = tmp
         assert cache.cached("k", 3600, lambda: {}, is_empty=lambda r: not r) == {}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── snapshot store ───────────────────────────────────────────────────────
+# telescope/snapshots.py backs store.latest() (relied on this session by
+# brief.py and every cross-telescope panel read), record()'s diff/dedupe,
+# and seed()'s backfill guarantee -- load-bearing kernel behaviour with no
+# direct test of its own before this, only indirect coverage through
+# Telescope.sweep() in the backfill tests below.
+def _isolated_store(**kw):
+    tmp = tempfile.mkdtemp()
+    store = SnapshotStore("test_snapshot_ns", **kw)
+    store.dir = os.path.join(tmp, "history")
+    store.events_file = os.path.join(tmp, "events.json")
+    os.makedirs(store.dir, exist_ok=True)
+    return store, tmp
+
+
+def test_snapshot_store_latest_is_none_before_any_save():
+    store, tmp = _isolated_store()
+    try:
+        assert store.latest() is None
+        assert store.count() == 0
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_record_saves_a_snapshot_and_returns_no_events_on_first_sweep():
+    """Nothing to diff against yet, so no events -- but the snapshot must
+    still be persisted, or the *next* sweep would have nothing to diff
+    against either and no telescope would ever announce anything."""
+    store, tmp = _isolated_store(rules=[NewLeaderRule()])
+    try:
+        rows = [{"key": "a", "name": "A", "rank": 1, "score": 90, "noise": False}]
+        assert store.record(rows) == []
+        assert store.count() == 1
+        assert store.latest()["rows"][0]["key"] == "a"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_record_fires_events_and_saves_a_new_snapshot_on_a_real_change():
+    store, tmp = _isolated_store(rules=[NewLeaderRule()])
+    try:
+        rows_a = [{"key": "a", "name": "A", "rank": 1, "score": 90, "noise": False}]
+        rows_b = [{"key": "b", "name": "B", "rank": 1, "score": 95, "noise": False},
+                  {"key": "a", "name": "A", "rank": 2, "score": 80, "noise": False}]
+        # Two real _save() calls in the same test could otherwise land on
+        # the same millisecond-granularity filename and silently overwrite
+        # each other -- a real risk this fast, never a real one in
+        # production where sweeps are hours apart.
+        with patch("telescope.snapshots.time.time", side_effect=[1000.0, 1001.0]):
+            store.record(rows_a)
+            events = store.record(rows_b)
+        assert len(events) == 1
+        assert events[0]["type"] == "new_leader"
+        assert events[0]["telescope"] == "test_snapshot_ns"   # diff()'s setdefault
+        assert store.count() == 2
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_record_skips_saving_a_new_snapshot_when_nothing_changed():
+    """The _unchanged() short-circuit: identical rank/score across a sweep
+    must not grow the history file or fire events -- this is what keeps a
+    quiet telescope's history from filling with near-duplicate snapshots."""
+    store, tmp = _isolated_store(rules=[NewLeaderRule()])
+    try:
+        rows = [{"key": "a", "name": "A", "rank": 1, "score": 90, "noise": False}]
+        store.record(rows)
+        assert store.count() == 1
+        assert store.record(list(rows)) == []   # a fresh list, same values
+        assert store.count() == 1                # no new file written
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_seed_writes_only_when_history_is_genuinely_empty():
+    """seed() is Telescope._maybe_backfill's synthetic-but-real baseline --
+    it must never overwrite real recorded history, only fill a true gap."""
+    store, tmp = _isolated_store()
+    try:
+        store.seed([{"key": "a", "name": "A", "rank": 1, "score": 50}], ts=1000.0)
+        assert store.count() == 1
+        assert store.latest()["ts"] == 1000.0
+
+        store.record([{"key": "a", "name": "A", "rank": 1, "score": 99,
+                        "noise": False}])
+        assert store.count() == 2
+
+        store.seed([{"key": "z", "name": "Z", "rank": 1, "score": 1}], ts=2000.0)
+        assert store.count() == 2                        # refused to overwrite
+        assert store.latest()["rows"][0]["key"] == "a"    # real history intact
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_load_events_respects_since_and_limit_and_stays_newest_first():
+    store, tmp = _isolated_store()
+    try:
+        store._append_events([{"ts": 100, "type": "x"}])
+        store._append_events([{"ts": 200, "type": "y"}])   # newest prepended
+        assert [e["ts"] for e in store.load_events()] == [200, 100]
+        assert store.load_events(since=150) == [{"ts": 200, "type": "y"}]
+        assert len(store.load_events(limit=1)) == 1
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
