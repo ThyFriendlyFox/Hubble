@@ -1493,6 +1493,36 @@ PHASES = [
                        "after the last two iterations' additions (was "
                        "still showing 72+80, actually 72+86 before this "
                        "iteration's 4 new kernel tests)"},
+            {"name": "Broad negative-result verification sweep + one real "
+                     "dead-import fix", "done": True,
+             "detail": "the last several iterations kept finding real bugs "
+                       "through hands-on verification, so this iteration "
+                       "extended that same discipline across several fresh "
+                       "angles rather than assuming the well was dry: "
+                       "clicked through the search filter, both sortable-"
+                       "column directions, and the SCORED ONLY/WATCHED ONLY "
+                       "toggles live in the browser via direct DOM/state "
+                       "inspection (all correct — no regressions); re-"
+                       "probed all 13 distinct external endpoints across "
+                       "the fleet (all 200 — no new dead sources since the "
+                       "last full sweep several iterations ago); scanned "
+                       "every telescope's live row data for NaN/Infinity "
+                       "JSON leaks and negative values in count/money-typed "
+                       "columns (none found); and ran pyflakes across the "
+                       "entire Python codebase for the first time this "
+                       "session (installed locally for this check only, "
+                       "not added as a project dependency) to look for a "
+                       "class of issue none of the manual audits would "
+                       "catch. Found exactly one real issue: holmdel.py "
+                       "imported telescope.http.get_json but never called "
+                       "it (every fetch there uses try_json/try_text per "
+                       "the module's own resilience pattern) — dead since "
+                       "at least the imports were written, now removed. "
+                       "Confirmed pyflakes is clean across the whole "
+                       "codebase after the fix, a good independent signal "
+                       "that the session's many refactors (xml_tag/"
+                       "to_float extraction, LMArena removal, and others) "
+                       "didn't leave other debris behind"},
         ],
     },
 ]

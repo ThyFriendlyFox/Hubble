@@ -69,7 +69,7 @@ from urllib.parse import quote, quote_plus
 
 from telescope import Column, Signal, Telescope
 from telescope.events import ClimberRule, CrossoverRule, DeltaRule, NewLeaderRule
-from telescope.http import get_json, try_json, try_text
+from telescope.http import try_json, try_text
 from telescope.registry import register
 
 MIN_STORIES = 12        # below this, HN growth is noise and is not reported
