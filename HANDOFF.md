@@ -19,13 +19,22 @@ Holmdel's research source (OpenAlex + arXiv), GitHub repo velocity, and the
 `crossing_over` event this section used to tell you to build are all done —
 if you're being told to "add OpenAlex to Holmdel" by an old standing prompt,
 check `git log` and `ROADMAP.md` first; that work is finished, don't redo it.
-Phase 5 (hardening) is where most recent work has landed: cache-poisoning
-resilience across every fetcher in the fleet, poller/brief-scheduler retry
-scheduling, cross-telescope joins that were silently capable of forcing a
-sweep of the telescope they read from, a frontend race condition where
-switching telescopes mid-refresh could revert to stale data, and a dead
-source (Hubble's LMArena fallback, 404 for a while, quietly contributing
-nothing) found and removed rather than left silently broken.
+Phase 5 (hardening) is where most recent work has landed, now spanning several
+distinct classes: cache-poisoning resilience across every fetcher, poller/
+brief-scheduler retry scheduling, cross-telescope joins that were silently
+capable of forcing a sweep of the telescope they read from, a frontend race
+condition where switching telescopes mid-refresh could revert to stale data,
+a dead source removed rather than left silently broken (Hubble's LMArena
+fallback), real data-correctness bugs found by inspecting live production
+data rather than just reading code (un-decoded XML entities leaking into
+company names in two telescopes' SEC parsing, unescaped HTML interpolation
+silently truncating the ROADMAP tab), code deduplication per convention #1
+below (`xml_tag`, `to_float`, a `NewEntrantRule` kernel extension), and — most
+recently — a full pass making three telescopes' secondary panels (Simons'
+WHALE MOVES, Kepler's stealth detection, Jackson's CAPABILITY AREAS) actually
+fire the real feed events `TELESCOPES.md` designed them to, which none of
+them had ever done. `roadmap.py`'s own Phase 5 entries are the detailed
+log — this is only the shape of it.
 
 Work is on branch `claude/telescope-dashboard-concept-lo1ay8`, open as **PR #1**.
 Pushing to that branch updates the PR — do not open a new one.

@@ -1738,6 +1738,41 @@ PHASES = [
                        "and Jackson's dollar floor gates regardless of "
                        "growth_pct. Confirmed both tests leave the real "
                        "data/ directory untouched"},
+            {"name": "HANDOFF.md's 'State' summary refreshed — several "
+                     "iterations of work were missing from it",
+             "done": True,
+             "detail": "investigated a few other angles first without a "
+                       "finding — checked whether the new sweep()-override "
+                       "pattern (Simons/Jackson) composes correctly with "
+                       "safe_sweep()'s error handling (it does, by plain "
+                       "polymorphism, no special-casing needed) and whether "
+                       "the new event types interact correctly with the "
+                       "BRIEF digest and WATCHLIST (both already generic "
+                       "enough — brief.py takes any event type "
+                       "unfiltered, and panel-row events like whale_move/"
+                       "budget_shift correctly can't be watched at all "
+                       "since only board rows are starrable, consistent "
+                       "with SECTOR HEAT/UNMAPPED's existing panels). "
+                       "Landed on HANDOFF.md itself: its 'State' summary "
+                       "paragraph — the first thing a fresh agent reads — "
+                       "still only described work from many iterations "
+                       "back (cache resilience, poller retry scheduling, "
+                       "the cross-telescope force-sweep bug, the frontend "
+                       "race condition, LMArena's removal) and named "
+                       "nothing from the entire recent stretch: the live-"
+                       "data-inspection bug class (XML entity leaks, the "
+                       "ROADMAP.md HTML-escaping bug), the convention-#1 "
+                       "dedups (xml_tag/to_float/NewEntrantRule), or the "
+                       "three-telescope events pass. A fresh agent reading "
+                       "only the summary (not the full Phase 5 log) would "
+                       "have gotten a genuinely outdated picture of what's "
+                       "already shipped — exactly the redo-already-done-"
+                       "work trap this same section warns against for the "
+                       "stale 'add OpenAlex to Holmdel' loop prompt. "
+                       "Rewrote it to name the real shape of what Phase 5 "
+                       "now covers while staying a summary, not a full "
+                       "changelog — still points to roadmap.py's own "
+                       "entries as the detailed record"},
         ],
     },
 ]
