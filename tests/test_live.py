@@ -12,6 +12,7 @@ shape is exactly the failure we care about catching.
 Fetched data is written to the normal disk cache, so re-runs are fast.
 """
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -77,6 +78,26 @@ def test_keys_are_unique(scope_rows):
     scope, rows = scope_rows
     keys = [r["key"] for r in rows]
     assert len(keys) == len(set(keys)), f"{scope.slug} has duplicate keys"
+
+
+def test_names_have_no_leaked_xml_or_html_entities(scope_rows):
+    """Caught live: SEC's primary_doc.xml legitimately XML-escapes company
+    names (valid XML requires it), and kepler.py's _tag() used to extract
+    that raw without decoding -- 'Legal & General ...' came back as
+    'Legal &amp; General ...'. Harmless-looking before the frontend's
+    HTML-escaping fix (the stray "&amp;" happened to decode back to "&"
+    when interpolated raw into innerHTML), but a real double-escaping bug
+    once the frontend started escaping correctly. Any leaked "&amp;"/
+    "&lt;"/"&gt;" in a real entity name means some fetcher is extracting
+    XML/HTML text without decoding it -- not fixture data, so this is
+    fleet-wide, not Kepler-specific."""
+    scope, rows = scope_rows
+    for r in rows:
+        name = r.get("name") or ""
+        assert not re.search(r"&(amp|lt|gt|quot|#\d+);", name), (
+            f"{scope.slug}: row '{r.get('key')}' name {name!r} looks like "
+            "un-decoded XML/HTML entity leakage"
+        )
 
 
 def _openalex_out_of_budget():
