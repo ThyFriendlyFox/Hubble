@@ -244,6 +244,64 @@ def test_cache_writes_empty_result_when_nothing_cached_yet():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_cache_hit_never_calls_the_producer_again():
+    """The single most common real-world path -- a sweep landing inside a
+    still-fresh TTL -- had never actually been confirmed: every existing
+    test only ever exercised the miss/stale-fallback branches. Found via
+    coverage.py: get()'s own hit branch had zero direct coverage despite
+    being what every telescope's own routine, in-TTL re-collect() actually
+    hits most of the time."""
+    tmp = tempfile.mkdtemp()
+    try:
+        cache = Cache("test_ns")
+        cache.dir = tmp
+        calls = {"n": 0}
+
+        def producer():
+            calls["n"] += 1
+            return {"v": calls["n"]}
+
+        first = cache.cached("k", 3600, producer)
+        second = cache.cached("k", 3600, producer)
+        assert first == second == {"v": 1}
+        assert calls["n"] == 1
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_cache_age_reports_seconds_since_write_and_none_when_missing():
+    """age() feeds meta()'s freshness readout shown on every board -- had
+    no test of its own at all, found via coverage.py."""
+    tmp = tempfile.mkdtemp()
+    try:
+        cache = Cache("test_ns")
+        cache.dir = tmp
+        assert cache.age("never-written") is None
+        cache.set("k", {"v": 1})
+        age = cache.age("k")
+        assert age is not None and 0 <= age < 5
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_cache_get_treats_a_corrupted_file_as_a_miss():
+    """A cache file truncated mid-write (a real crash-during-write risk,
+    not just hypothetical -- set() writes to a .tmp file and os.replace()s
+    it specifically to avoid this, but a pre-existing corrupted file from
+    some other cause should still degrade to a clean miss, not raise and
+    take a sweep down."""
+    tmp = tempfile.mkdtemp()
+    try:
+        cache = Cache("test_ns")
+        cache.dir = tmp
+        os.makedirs(tmp, exist_ok=True)
+        with open(cache._path("k"), "w", encoding="utf-8") as f:
+            f.write("{not valid json")
+        assert cache.get("k", 3600) is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 # ── lazy directory creation ──────────────────────────────────────────────
 # Found by inspecting the real data/ directory and finding a dozen empty
 # leftover namespace folders (test_snapshot_ns, test_panels_shape_ns, and
