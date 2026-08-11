@@ -8,7 +8,7 @@ system is), `TELESCOPES.md` (why the pattern is shaped this way) and
 
 Six telescopes run on live public data, no API keys. Kernel in `telescope/`,
 one domain pack per telescope in `observatories/`, one generic frontend driven
-entirely by telescope metadata. 118 kernel tests + 100 domain-pack tests +
+entirely by telescope metadata. 118 kernel tests + 101 domain-pack tests +
 92 live tests (all three suites grow as the build continues — check the
 actual count with `-q`, don't trust this number for long).
 
@@ -77,9 +77,15 @@ arithmetic. The Hubble telescope itself (the LLM index, not the AI CAPEX
 panel above) closed to 100% next — smallest domain pack in the fleet, its
 own price-cleaning (`_clean_price()`'s negative-sentinel handling) and
 OpenRouter join logic (rank/pricing/benchmark/arena-elo-max extraction)
-pinned directly; `observatories/` now has five of six domain packs at
-100%, only `reddington.py` (97%, one line) left. `roadmap.py`'s own Phase
-5 entries are the detailed log — this is only the shape of it.
+pinned directly. `reddington.py` closed the theme out last — the smallest
+file in the fleet, one edge case (no gauge in the VOLUME/FUEL segments) —
+which makes `observatories/` all six domain packs at 100%, alongside
+`telescope/` (kernel, ~92%+ with every remaining gap a deliberately-judged
+omission) and `app.py` (75%, same standard): the whole codebase has now
+been individually, deliberately audited by this coverage.py methodology,
+not just the parts that happened to get touched by feature work.
+`roadmap.py`'s own Phase 5 entries are the detailed log — this is only the
+shape of it.
 
 Work is on branch `claude/telescope-dashboard-concept-lo1ay8`, open as **PR #1**.
 Pushing to that branch updates the PR — do not open a new one.
@@ -121,10 +127,22 @@ If all three named-in-the-table sources are still blocked (expect this), read `R
 already done rather than re-deriving it, then look for real, previously-
 unflagged gaps rather than re-treading covered ground: audit a class of
 fetcher for the same failure mode that's already been fixed elsewhere (cache
-resilience, retry scheduling, a dead upstream URL), verify a documentation
-file against current reality the way this section itself needed fixing, or
-extend test coverage into a genuinely untested corner. `roadmap.py`'s own
-Phase 5 entries are a log of exactly this kind of iteration — read a few
+resilience, retry scheduling, a dead upstream URL), or verify a documentation
+file against current reality the way this section itself needed fixing.
+The coverage.py-guided sweep that used to be the default fallback here is
+now genuinely done, not just quiet for a while: every Python file that
+matters — all 11 in `telescope/`, `app.py`, and all six domain packs in
+`observatories/` — has been individually, deliberately audited, and every
+real gap that methodology could find has been closed (what's left in each
+is a documented, judged omission: thread/process lifecycle code, an
+optional dependency, SEC-index-parsing plumbing). Don't reach for "extend
+test coverage" as the default next move anymore — it'll mostly find
+nothing, because there's nothing left to find that way. `static/app.js`
+(826 lines, the whole frontend) has never been tested at all and is a
+real gap, but introducing a JS test framework is a bigger decision than a
+single iteration should make unilaterally — surface it as an option, don't
+just start installing a dependency. `roadmap.py`'s own Phase 5 entries are
+a log of the kind of iteration that still fits this section — read a few
 before starting to calibrate scope and the level of live verification
 expected.
 

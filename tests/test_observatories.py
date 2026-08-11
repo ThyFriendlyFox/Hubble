@@ -29,6 +29,7 @@ from observatories.jackson import Jackson                         # noqa: E402
 from observatories.kepler import (Kepler, _core_name,             # noqa: E402
                                   _distinctive_enough,
                                   _looks_like_the_company, _slug)
+from observatories.reddington import Reddington                   # noqa: E402
 from observatories.simons import Simons                           # noqa: E402
 
 
@@ -1615,5 +1616,27 @@ def test_fetch_openrouter_cleans_a_negative_price_sentinel_within_the_join():
             out = hub.fetch_openrouter(3600)
         assert out[0]["price_prompt"] is None
         assert out[0]["price_completion"] == 0.000003
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# REDDINGTON
+# ═══════════════════════════════════════════════════════════════════════
+# The smallest domain pack -- collect()/historical_rows() delegate entirely
+# to telescope/series.py's fetch_panel()/historical_panel(), already at
+# 100% kernel coverage of their own. The only domain-specific logic here is
+# context()'s VOLUME/FUEL filter, including the one branch a real sweep
+# with plenty of freight data never happens to hit: every gauge filtered
+# out entirely.
+def test_context_is_none_when_no_gauge_is_volume_or_fuel():
+    red = Reddington()
+    tmp = tempfile.mkdtemp()
+    red.cache.dir = tmp
+    rows = [{"name": "Dry Bulk Freight", "group": "OCEAN", "level": 10,
+             "chg_3m": 1, "chg_12m": 2, "as_of": "2026-01-01"}]
+    try:
+        with patch.object(red, "collect", return_value=rows):
+            assert red.context(force=True) is None
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
