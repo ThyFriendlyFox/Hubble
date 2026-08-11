@@ -1773,6 +1773,33 @@ PHASES = [
                        "now covers while staying a summary, not a full "
                        "changelog — still points to roadmap.py's own "
                        "entries as the detailed record"},
+            {"name": "Entity-leak test extended to cover event headlines, "
+                     "the third place names get embedded",
+             "done": True,
+             "detail": "the last few iterations' new event types "
+                       "(whale_move, budget_shift, new_program, "
+                       "stealth_raise) all build their headline via a "
+                       "plain f-string embedding a real entity name (fund, "
+                       "security, capability area, company), not the "
+                       "standard _fmt()/.format() rule pipeline every "
+                       "older event type uses — worth checking "
+                       "independently rather than assuming the existing "
+                       "row/panel entity-leak test already covered them. "
+                       "It didn't: that test only ever checked scope_rows "
+                       "and scope.panels(), never scope.store."
+                       "load_events(). Checked the real, currently-"
+                       "recorded events across all three telescopes before "
+                       "extending the test — Simons (25), Jackson (6) and "
+                       "Kepler (26) real fired events, zero leaks in any "
+                       "of them, confirming the earlier xml_tag() fix at "
+                       "the data source correctly protects every "
+                       "downstream consumer including these newer f-"
+                       "string headlines, not just the row/panel paths it "
+                       "was originally verified against. Extended the "
+                       "test to check event headlines too so a future "
+                       "regression in this specific path — a new event "
+                       "type built from un-decoded source data — would "
+                       "actually get caught"},
         ],
     },
 ]

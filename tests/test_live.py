@@ -109,7 +109,14 @@ def test_names_have_no_leaked_xml_or_html_entities(scope_rows):
     shape (WHALE MOVES' free-text fields are "fund"/"security", not
     "name"), so a hardcoded key would silently check nothing for panels
     that don't happen to use it, exactly the gap that let this bug hide
-    from the first version of this test."""
+    from the first version of this test.
+
+    Checks recorded event headlines too, a third place the same underlying
+    entity names get embedded into displayed text -- whale_move/
+    budget_shift/new_program/stealth_raise all build their headline via a
+    plain f-string, not the standard _fmt()/.format() rule pipeline, so
+    they're worth checking independently rather than assuming the row/panel
+    checks above already cover them."""
     scope, rows = scope_rows
     for r in rows:
         _assert_no_entity_leak(scope.slug, f"row '{r.get('key')}'", r.get("name"))
@@ -122,6 +129,10 @@ def test_names_have_no_leaked_xml_or_html_entities(scope_rows):
                     scope.slug, f"panel '{panel.get('title')}' row field '{field}'",
                     r.get(field)
                 )
+    for e in scope.store.load_events(limit=200):
+        _assert_no_entity_leak(
+            scope.slug, f"event '{e.get('type')}' headline", e.get("headline")
+        )
 
 
 def _openalex_out_of_budget():
