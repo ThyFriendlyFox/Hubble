@@ -3,3 +3,4 @@ __pycache__/
 data/
 server.log
 .venv/
+.coverage

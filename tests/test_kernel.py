@@ -1120,6 +1120,64 @@ def test_post_to_discord_swallows_a_request_exception():
         assert notifier.post_to_discord({"headline": "x"}, _StubScope()) is False
 
 
+def test_post_to_slack_noops_without_a_webhook_configured():
+    """post_to_slack() had zero tests of its own despite being nearly
+    identical in shape to post_to_discord() (which does) -- found via
+    coverage.py, not a guess: 56% on this file vs. 90%+ everywhere else in
+    the kernel, the clear outlier once the two live-hitting test suites are
+    combined."""
+    with patch.dict(os.environ, {}, clear=True), \
+         patch("telescope.notifier.requests.post") as mock_post:
+        assert notifier.post_to_slack({"headline": "x"}, _StubScope()) is False
+    mock_post.assert_not_called()
+
+
+def test_post_to_slack_posts_when_webhook_configured():
+    env = {"OBSERVATORY_SLACK_WEBHOOK": "https://slack.test/hook"}
+    with patch.dict(os.environ, env, clear=True), \
+         patch("telescope.notifier.requests.post") as mock_post:
+        assert notifier.post_to_slack({"headline": "x"}, _StubScope()) is True
+    mock_post.assert_called_once()
+
+
+def test_post_to_slack_swallows_a_request_exception():
+    env = {"OBSERVATORY_SLACK_WEBHOOK": "https://slack.test/hook"}
+    with patch.dict(os.environ, env, clear=True), \
+         patch("telescope.notifier.requests.post",
+               side_effect=requests.ConnectionError("boom")):
+        assert notifier.post_to_slack({"headline": "x"}, _StubScope()) is False
+
+
+def test_post_text_to_discord_and_slack_noop_without_webhooks():
+    """The brief digest's own posting helpers -- same unconfigured-is-
+    honest shape as the per-event channels, but never directly tested."""
+    with patch.dict(os.environ, {}, clear=True), \
+         patch("telescope.notifier.requests.post") as mock_post:
+        assert notifier.post_text_to_discord("digest") is False
+        assert notifier.post_text_to_slack("digest") is False
+    mock_post.assert_not_called()
+
+
+def test_post_text_to_discord_and_slack_post_when_configured():
+    env = {"OBSERVATORY_DISCORD_WEBHOOK": "https://discord.test/hook",
+           "OBSERVATORY_SLACK_WEBHOOK": "https://slack.test/hook"}
+    with patch.dict(os.environ, env, clear=True), \
+         patch("telescope.notifier.requests.post") as mock_post:
+        assert notifier.post_text_to_discord("digest") is True
+        assert notifier.post_text_to_slack("digest") is True
+    assert mock_post.call_count == 2
+
+
+def test_post_text_to_discord_and_slack_swallow_a_request_exception():
+    env = {"OBSERVATORY_DISCORD_WEBHOOK": "https://discord.test/hook",
+           "OBSERVATORY_SLACK_WEBHOOK": "https://slack.test/hook"}
+    with patch.dict(os.environ, env, clear=True), \
+         patch("telescope.notifier.requests.post",
+               side_effect=requests.ConnectionError("boom")):
+        assert notifier.post_text_to_discord("digest") is False
+        assert notifier.post_text_to_slack("digest") is False
+
+
 def test_post_to_x_noops_without_credentials():
     """Must short-circuit on the env-var check before ever importing tweepy
     -- tweepy is an optional dependency (pip install tweepy) that may not
