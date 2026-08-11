@@ -2798,6 +2798,42 @@ PHASES = [
                        "applicable. No source changed -- verification was "
                        "the work. 118 kernel tests + 101 domain-pack "
                        "tests, confirmed unaffected"},
+            {"name": "Drove Reddington's and Hubble's boards live -- the "
+                     "last two telescopes never actually opened in a "
+                     "browser this whole build, now all six have been",
+             "done": True,
+             "detail": "HANDOFF.md's own note after the last iteration "
+                       "was explicit that only Kepler/Jackson/Simons had "
+                       "been driven live despite Phase 7 covering "
+                       "'every telescope's board' in summary -- Reddington "
+                       "and Hubble had only ever been curl-checked for "
+                       "response time, never actually clicked through. "
+                       "With OpenAlex still returning a real 429 (re-"
+                       "confirmed live, ~1h20m before the midnight UTC "
+                       "reset), Holmdel stayed a poor candidate to drive "
+                       "right now, so this iteration closed the other two "
+                       "instead. Both work correctly end to end: real "
+                       "podium data with the right per-telescope columns "
+                       "(Reddington's SEGMENT/LEVEL/Z-SCORE; Hubble's "
+                       "INTL/CODE/AGENT), correct caveat text matching the "
+                       "real current source (word-for-word what the "
+                       "TELESCOPES.md correction verified against the "
+                       "code two iterations ago), the right secondary "
+                       "panel (Reddington's COST VS VOLUME), full-index "
+                       "tables with the right row counts (13 rows = "
+                       "Reddington's 12 real series + header; 512 for "
+                       "Hubble's much larger model list) and the right "
+                       "columns, and live re-ranking confirmed on a "
+                       "weight-slider change (Hubble's INTELLIGENCE to "
+                       "100 changed both the scores and the podium "
+                       "order). No bugs found -- a clean, honest result, "
+                       "the same as Phase 7's own second pass. This "
+                       "closes the specific gap HANDOFF.md flagged; all "
+                       "six telescopes have now actually been opened and "
+                       "clicked through live at some point in this build, "
+                       "not just exercised via test_live.py's API-level "
+                       "checks. No source changed. 118 kernel tests + 101 "
+                       "domain-pack tests, confirmed unaffected"},
         ],
     },
 ]

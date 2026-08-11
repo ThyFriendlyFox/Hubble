@@ -138,8 +138,15 @@ lifecycle live. "Dark-mode rendering" turned out to be a non-question:
 `style.css` has no `prefers-color-scheme`, `data-theme`, or any
 light-theme variable at all — a single fixed dark theme by design, no
 alternate mode to verify. Phase 7's entire original punch list is now
-resolved. `roadmap.py`'s own Phase 5, 6 and 7 entries are the detailed
-log — this is only the shape of it.
+resolved. Reddington's and Hubble's boards followed next — the last two
+telescopes never actually driven live despite Phase 7's own summary
+saying "every telescope's board." Both correct end to end: real podium
+data, correct caveats, the right secondary panel and full-index columns,
+live re-ranking confirmed on a weight change. All six telescopes have
+now actually been opened and clicked through live at some point, not
+just exercised via `test_live.py`'s API-level checks. `roadmap.py`'s own
+Phase 5, 6 and 7 entries are the detailed log — this is only the shape
+of it.
 
 Work is on branch `claude/telescope-dashboard-concept-lo1ay8`, open as **PR #1**.
 Pushing to that branch updates the PR — do not open a new one.
@@ -241,16 +248,20 @@ rendering" turned out to be a non-question: `style.css` has no
 single fixed dark theme by design, nothing to verify.
 
 If "drive the dashboard live" comes up again as a fallback, don't re-
-check any of the above — it needs a genuinely new angle. Holmdel's,
-Reddington's and Hubble's boards have still never been driven live
-(only Kepler, Jackson and Simons have); Holmdel specifically is worth
-revisiting once OpenAlex's budget has actually reset (still `429` as of
-this check, resets at midnight UTC — do the arithmetic against the
-current time before assuming it's cleared) to confirm the board loads
-in a normal few-minutes cold-sweep time rather than the multi-hour grind
-this session's own testing caused. A systematic domain-pack-docstring-
-vs-code audit (the Phase 6 documentation fallback's own flagged next
-candidate) is still unstarted too.
+check any of the above — it needs a genuinely new angle. All six
+telescope boards have now been driven live at least once (Reddington
+and Hubble were the last two, both correct — real podium data, correct
+caveats, right secondary panels/columns, live re-ranking confirmed).
+Holmdel specifically is worth a *second* live pass once OpenAlex's
+budget has actually reset (still `429` as of the last check, resets at
+midnight UTC — do the arithmetic against the current time before
+assuming it's cleared) to confirm the board loads in a normal
+few-minutes cold-sweep time rather than the multi-hour grind this
+session's own testing caused — that's re-verifying a known, explained,
+temporary condition clears on schedule, not re-treading already-covered
+ground. A systematic domain-pack-docstring-vs-code audit (the Phase 6
+documentation fallback's own flagged next candidate) is still
+unstarted too.
 
 ## Then work the roadmap
 
