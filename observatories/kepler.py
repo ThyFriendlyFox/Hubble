@@ -14,8 +14,11 @@ a stealth raise, detected.
 
 Kepler ranks those issuers by how interesting the raise looks, cross-checks
 each against public attention (Hacker News) and hiring signal, and announces
-new ones as they appear — and, when a stealth flag it raised earlier turns
-out to have been right, says so: see "signal-quality feedback" below.
+new ones as they appear as one of two distinct events — `stealth_raise` for
+the headline case (zero public footprint, the whole reason this telescope
+exists) and `new_candidate` for everything else — and, when a stealth flag
+it raised earlier turns out to have been right, says so: see "signal-quality
+feedback" below.
 
 Sources (all public, no keys):
   SEC EDGAR daily index   every Form D / D-A filed, by day
@@ -292,11 +295,27 @@ class Kepler(Telescope):
             headline="🪐 {name} is the largest new private raise on the board — "
                      "{raise_fmt} raise."
         ),
+        # Partitions every new entrant into exactly one of these two events
+        # (never both) via the same require_field="stealth" gate with
+        # opposite require_value -- the stealth case is the headline case
+        # this whole telescope exists for ("a Form D from a company with no
+        # other footprint is a stealth raise, detected", per the module
+        # docstring), so it gets a distinct type and headline rather than
+        # being folded into the generic new_candidate copy.
         NewEntrantRule(
             max_rank=80, require_any=("raise_size",),
+            require_field="stealth", require_value=False,
             type="new_candidate",
             headline="🪐 New raise detected — {name} filed a Form D for "
                      "{raise_fmt} ({industry}, {state}).",
+        ),
+        NewEntrantRule(
+            max_rank=80, require_any=("raise_size",),
+            require_field="stealth", require_value=True,
+            type="stealth_raise",
+            headline="🥷 Stealth raise detected — {name} filed a Form D for "
+                     "{raise_fmt} with zero public footprint "
+                     "({industry}, {state}).",
         ),
         ClimberRule(
             rank_delta=12, score_delta=4.0,

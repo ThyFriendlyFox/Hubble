@@ -66,8 +66,9 @@ laptop or light the whole observatory on a server. Toggle state persists to
 - **Kepler** — startup discovery, outside-in. Under Reg D essentially every US
   private raise must file a **Form D** within 15 days of first sale, with the
   offering size and amount sold. It's public, structured, and usually lands
-  before any press. A real raise with no public footprint is flagged
-  `STEALTH`, and a `GRADUATED` event fires the moment it gets its first real
+  before any press. A real raise with no public footprint fires a distinct
+  `STEALTH` event at detection — the headline case this telescope exists
+  for — and a `GRADUATED` event fires the moment it gets its first real
   public attention. Hiring velocity (open roles on Greenhouse, Lever or
   Ashby, guessed from the company name) is layered on as the single most
   honest traction signal available for free. This is the complement to

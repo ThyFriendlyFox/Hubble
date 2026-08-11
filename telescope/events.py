@@ -77,6 +77,13 @@ class NewEntrantRule:
     """Fires when an entity appears that wasn't in the previous snapshot."""
     max_rank: int = 150
     require_any: tuple = ()          # row must have >=1 of these fields set
+    # Gate on one specific field's value, not just its presence -- e.g.
+    # Kepler partitions every new entrant into exactly one of two events
+    # (new_candidate vs. stealth_raise) by declaring the same rule twice
+    # with opposite require_value, rather than one rule that can't tell
+    # the two cases apart.
+    require_field: str = None
+    require_value: object = True
     headline: str = "🔭 New entrant — {name} enters at #{rank} (score {score})."
     type: str = "new_entrant"
 
@@ -87,6 +94,8 @@ class NewEntrantRule:
         if prev is not None:
             return []
         if self.require_any and not any(curr.get(f) is not None for f in self.require_any):
+            return []
+        if self.require_field and curr.get(self.require_field) != self.require_value:
             return []
         if not curr.get("rank") or curr["rank"] > self.max_rank:
             return []

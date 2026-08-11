@@ -155,6 +155,22 @@ def test_new_entrant_respects_max_rank_and_required_fields():
     assert rule.row({"rank": 9}, {"name": "n", "rank": 5, "x": 1}, 0) == []  # not new
 
 
+def test_new_entrant_require_field_partitions_without_overlap():
+    """Kepler declares this rule twice (stealth_raise vs. new_candidate)
+    with opposite require_value on the same field, relying on every new
+    entrant firing exactly one of the two, never both and never neither."""
+    stealth = NewEntrantRule(require_field="stealth", require_value=True,
+                             type="stealth_raise")
+    normal = NewEntrantRule(require_field="stealth", require_value=False,
+                            type="new_candidate")
+    row_stealth = {"name": "n", "rank": 5, "score": 1, "stealth": True}
+    row_normal = {"name": "n", "rank": 5, "score": 1, "stealth": False}
+    assert stealth.row(None, row_stealth, 0)[0]["type"] == "stealth_raise"
+    assert normal.row(None, row_stealth, 0) == []
+    assert normal.row(None, row_normal, 0)[0]["type"] == "new_candidate"
+    assert stealth.row(None, row_normal, 0) == []
+
+
 def test_climber_fires_on_rank_or_score():
     rule = ClimberRule(rank_delta=10, score_delta=5.0)
     base = {"name": "n", "rank": 5, "score": 1}
