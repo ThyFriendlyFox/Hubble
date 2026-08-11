@@ -8,9 +8,9 @@ system is), `TELESCOPES.md` (why the pattern is shaped this way) and
 
 Six telescopes run on live public data, no API keys. Kernel in `telescope/`,
 one domain pack per telescope in `observatories/`, one generic frontend driven
-entirely by telescope metadata. 118 kernel tests + 92 live tests (both suites
-grow as the build continues — check the actual count with `-q`, don't trust
-this number for long).
+entirely by telescope metadata. 118 kernel tests + 28 domain-pack tests +
+92 live tests (all three suites grow as the build continues — check the
+actual count with `-q`, don't trust this number for long).
 
 Every Phase 0-4 roadmap item is either shipped or genuinely, repeatedly
 re-confirmed blocked on something external (SAM.gov and Semantic Scholar both
@@ -46,17 +46,27 @@ surfaced and fixed a genuine concurrency bug: `Cache.set()` wrote every key to
 one shared `.tmp` path, so a background poller sweep racing a manual refresh
 of the same telescope could crash with `FileNotFoundError` — not
 test-only, a real production race. Fixed with a per-writer-unique tmp path.
-`roadmap.py`'s own Phase 5 entries are the detailed log — this is only the
-shape of it.
+The sweep then moved to `observatories/` — never individually measured
+before, unlike `telescope/` and `app.py` — and found Kepler at 55%, the
+lowest of any file in the whole project: most of its own business logic
+(entity-name matching, the Greenhouse/Lever/Ashby fallback chain, HN
+domain-vs-title matching) was never exercised by either suite, since
+`test_live.py`'s warm cache skips the producer functions that logic lives
+in. New file `tests/test_observatories.py` mocks `http.py`'s fetch
+primitives to pin that logic directly; Kepler: 55% -> 87%, the remainder
+being SEC daily-index-parsing plumbing flagged as a follow-up rather than
+covered. `roadmap.py`'s own Phase 5 entries are the detailed log — this is
+only the shape of it.
 
 Work is on branch `claude/telescope-dashboard-concept-lo1ay8`, open as **PR #1**.
 Pushing to that branch updates the PR — do not open a new one.
 
 ```bash
 pip install -r requirements.txt
-OBSERVATORY_ENABLED=all python app.py     # http://127.0.0.1:5000
-python -m pytest tests/test_kernel.py -q  # pure logic, fast
-python -m pytest tests/test_live.py -q    # hits real sources, slow when cold
+OBSERVATORY_ENABLED=all python app.py         # http://127.0.0.1:5000
+python -m pytest tests/test_kernel.py -q       # kernel pure logic, fast
+python -m pytest tests/test_observatories.py -q  # domain-pack logic, mocked network, fast
+python -m pytest tests/test_live.py -q         # hits real sources, slow when cold
 ```
 
 ## Start here: re-probe what's still blocked, then read the roadmap
@@ -72,7 +82,19 @@ a long time" is not the same as "permanently impossible," so don't skip this:
 | Semantic Scholar | `429`, occasionally a genuine `200` | the unauthenticated quota is a small pool shared globally by every unkeyed caller; an isolated success is not a real unblocking — confirmed by immediately retrying several more times, still 429 |
 | Jackson's own SBIR fetch | `429` / `403`, worse than "rate-limits hard" | independent of SAM.gov's key requirement |
 
-If all three are still blocked (expect this), read `ROADMAP.md` for what's
+**A finding, not a fix — needs a human call:** the documented `api.sam.gov`
+partner API still 404s without a key (table above, unchanged). But SAM.gov's
+own website backend — the undocumented internal endpoint its public search
+page's own JS calls, `sam.gov/api/prod/sgs/v1/search/?index=opp&...` — does
+return real, live, unauthenticated opportunity data (verified 2026-08-11:
+keyword and NAICS filtering both work, real solicitations with agency
+hierarchy). Deliberately **not** wired into Jackson: that endpoint exists to
+route around GSA's own registration requirement for this exact data, which
+is a ToS/legal judgment call, not a technical one — not mine to make
+unilaterally in an unattended loop. Flagged here for a human decision rather
+than silently used or silently dropped.
+
+If all three named-in-the-table sources are still blocked (expect this), read `ROADMAP.md` for what's
 already done rather than re-deriving it, then look for real, previously-
 unflagged gaps rather than re-treading covered ground: audit a class of
 fetcher for the same failure mode that's already been fixed elsewhere (cache
@@ -109,7 +131,15 @@ and `ROADMAP.md`. Regenerate with `python roadmap.py > ROADMAP.md` after edits.
    exact failure worth catching. It asserts every declared signal and column is
    populated, that weights genuinely re-rank, and that event headlines render
    with no leftover `{placeholders}`. Add new telescopes to its `ALL` and
-   `MIN_ROWS`.
+   `MIN_ROWS`. A domain pack's own business logic (entity-name matching, a
+   multi-source fallback chain, XML field extraction) still needs pinning even
+   though it isn't kernel code — `test_live.py`'s warm-cache fixtures mean a
+   real sweep often never even calls a source's producer function at all
+   (`cache.cached()` only calls it on a miss), so that logic can go completely
+   unverified by a passing live suite. `tests/test_observatories.py` is the
+   home for that: mocks `telescope/http.py`'s fetch primitives directly (the
+   same technique `test_kernel.py` already uses for `http.py`'s own retry
+   logic), never touches the network or the real disk cache.
 4. **Missing signals renormalise, they don't zero.** This is the core of
    `telescope/ranking.py`. Before adding a signal, check it can't dominate when
    others are absent — that bug has already appeared twice (Kepler ranked
