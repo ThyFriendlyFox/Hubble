@@ -421,6 +421,60 @@ def _isolated_scope(cls):
     return scope, tmp
 
 
+# ── panel-data event detection (Simons/Jackson) ──────────────────────────
+# _whale_move_events()/_psc_events() were only ever verified with ad-hoc
+# scripts against real cached data while building them -- pure logic once
+# you have rows, the same "no network" reasoning as everything else in this
+# file, so pinning them here rather than leaving them with zero automated
+# regression coverage.
+def test_whale_move_events_deduplicates_by_filing_not_by_sweep():
+    from observatories.simons import Simons
+    scope, tmp = _isolated_scope(Simons)
+    try:
+        move = {
+            "fund": "Citadel", "security": "TESLA INC",
+            "prior_value": 100.0, "recent_value": 50.0, "change": -50.0,
+            "direction": "DECREASED", "cik": "1", "cusip": "X",
+            "accession": "acc-1",
+        }
+        events = scope._whale_move_events([move])
+        assert len(events) == 1
+        assert events[0]["type"] == "whale_move"
+        assert "Citadel" in events[0]["headline"] and "TESLA" in events[0]["headline"]
+        # Same filing again (e.g. a later sweep re-reading the same cached
+        # accession) -> already announced, must not re-fire.
+        assert scope._whale_move_events([move]) == []
+        # A genuinely new quarterly filing (different accession) for the
+        # same fund/security -> fires again.
+        move2 = {**move, "accession": "acc-2", "change": -80.0}
+        assert scope._whale_move_events([move2])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_psc_events_new_program_then_budget_shift_on_real_drift():
+    from observatories.jackson import Jackson
+    scope, tmp = _isolated_scope(Jackson)
+    try:
+        row = {"code": "1234", "name": "Test Category", "amount": 100e6,
+               "growth_pct": None}
+        # Never seen before, and growth_pct=None (nothing comparable a
+        # year ago) -> a new_program event, not budget_shift.
+        events = scope._psc_events([row])
+        assert len(events) == 1 and events[0]["type"] == "new_program"
+        # A later sweep with only a small move since the last announcement
+        # must not re-fire.
+        assert scope._psc_events([{**row, "growth_pct": 5.0}]) == []
+        # A substantial move (>=30%) since the last announcement -> budget_shift.
+        events2 = scope._psc_events([{**row, "amount": 140e6, "growth_pct": 40.0}])
+        assert len(events2) == 1 and events2[0]["type"] == "budget_shift"
+        # Below the $50M floor -> never fires regardless of growth_pct.
+        tiny = {"code": "9999", "name": "Tiny", "amount": 1e6, "growth_pct": None}
+        assert scope._psc_events([tiny]) == []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_backfill_seeds_a_real_baseline_so_first_sweep_can_announce():
     """historical_rows() lets a telescope's very first sweep diff against a
     genuine one-period-ago reading instead of announcing nothing until a

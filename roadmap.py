@@ -1712,6 +1712,32 @@ PHASES = [
                        "simulating a 40% jump against real baseline data "
                        "(fired) alongside a 2% wiggle on another real code "
                        "(correctly didn't)"},
+            {"name": "Test coverage for the two new panel-event-detection "
+                     "functions", "done": True,
+             "detail": "the last three iterations shipped real, non-"
+                       "trivial domain logic — _whale_move_events()'s and "
+                       "_psc_events()'s dedup/threshold/first-seen "
+                       "branching — verified only with ad-hoc scripts "
+                       "during implementation, never persisted as an "
+                       "automated test. Inconsistent with this whole "
+                       "session's own discipline of pinning real logic "
+                       "with tests (xml_tag, to_float, NewEntrantRule's "
+                       "require_field, append_events all got one; these "
+                       "two hadn't). Added two tests to test_kernel.py, "
+                       "importing the real Simons/Jackson classes with "
+                       "synthetic-but-realistic row/move dicts rather than "
+                       "hitting live SEC/USAspending — pure logic once you "
+                       "have the data, the same 'no network' reasoning "
+                       "already applied to everything else in that file, "
+                       "even though the code under test lives in "
+                       "observatories/ rather than telescope/. Each test "
+                       "confirms the full lifecycle: first-seen fires "
+                       "(new_program / whale_move), a small subsequent "
+                       "move doesn't re-fire, a genuinely new observation "
+                       "(new accession / substantial drift) fires again, "
+                       "and Jackson's dollar floor gates regardless of "
+                       "growth_pct. Confirmed both tests leave the real "
+                       "data/ directory untouched"},
         ],
     },
 ]
