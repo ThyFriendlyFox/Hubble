@@ -452,6 +452,28 @@ def test_whale_move_events_deduplicates_by_filing_not_by_sweep():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_whale_key_matches_between_panel_rows_and_events():
+    """The panel row's watch key and the whale_move event's own key used to
+    be two independently-written f-strings that happened to match -- a real
+    risk of silent drift (a panel row whose key stopped matching its
+    event's key would silently break watching with no error anywhere).
+    Both now call the same _whale_key() helper; this pins that they still
+    agree, not just that each one individually looks reasonable."""
+    from observatories.simons import Simons
+    move = {"fund": "Citadel", "security": "TESLA INC",
+            "cik": "1423053", "cusip": "88160R101"}
+    assert Simons._whale_key(move) == "1423053:88160R101"
+    scope, tmp = _isolated_scope(Simons)
+    try:
+        full_move = {**move, "prior_value": 100.0, "recent_value": 50.0,
+                     "change": -50.0, "direction": "DECREASED",
+                     "accession": "acc-1"}
+        events = scope._whale_move_events([full_move])
+        assert events[0]["key"] == Simons._whale_key(move)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_psc_events_new_program_then_budget_shift_on_real_drift():
     from observatories.jackson import Jackson
     scope, tmp = _isolated_scope(Jackson)

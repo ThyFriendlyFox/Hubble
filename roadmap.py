@@ -1846,6 +1846,31 @@ PHASES = [
                        "fixed by scoping the selector to #panels-container "
                        "and reverting the accidental board-row toggle "
                        "before moving on"},
+            {"name": "Deduplicated Simons' whale-key formula between the "
+                     "panel row and its own event", "done": True,
+             "detail": "a direct follow-up to the panel-watchability item "
+                       "just above, found while writing it: the WHALE "
+                       "MOVES panel row's watch key and the whale_move "
+                       "event's own key were two independently-written "
+                       "f-strings (f\"{{cik}}:{{cusip}}\") that happened "
+                       "to currently match, with nothing enforcing they "
+                       "stayed in sync — exactly the kind of duplication "
+                       "this project's own convention #1 warns against, "
+                       "and a genuinely dangerous one here specifically: a "
+                       "future edit to one without the other would make "
+                       "watching silently stop matching, no crash, no "
+                       "error, just a star that quietly never lines up "
+                       "with the feed again. Extracted a single "
+                       "_whale_key(m) staticmethod used by both the panel "
+                       "row builder and _whale_move_events(), so the two "
+                       "can no longer drift apart. Verified against real, "
+                       "current data: panel row keys and freshly-computed "
+                       "event keys for the same real moves are identical, "
+                       "confirmed programmatically (set equality), not "
+                       "just visually. Added a kernel test pinning both "
+                       "the exact key format and that the panel and event "
+                       "paths agree, not just that each individually looks "
+                       "reasonable"},
         ],
     },
 ]

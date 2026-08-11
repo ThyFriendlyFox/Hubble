@@ -340,6 +340,19 @@ class Simons(Telescope):
             slot["value"] += value
         return out
 
+    @staticmethod
+    def _whale_key(m):
+        """Stable identity for a (fund, security) pair -- not per-filing, so
+        watching a WHALE MOVES panel row matches this fund's future moves on
+        this security, not just the filing that happened to be on the board
+        when it was starred. Used by both the panel row and the whale_move
+        event's own key -- previously two independently-written f-strings
+        that happened to match, a real risk of silent drift if one were
+        ever edited without the other; a panel row whose key stopped
+        matching its event's key would silently break watching with no
+        error anywhere."""
+        return f"{m['cik']}:{m['cusip']}"
+
     def _whale_moves(self, force):
         """Top position deltas across the curated watchlist, biggest first."""
         ttl = self.ttl(force)
@@ -429,13 +442,13 @@ class Simons(Telescope):
         ts = time.time()
         events = []
         for m in moves:
-            key = f"{m['cik']}:{m['cusip']}:{m['accession']}"
-            if key in seen:
+            seen_key = f"{self._whale_key(m)}:{m['accession']}"
+            if seen_key in seen:
                 continue
-            new_seen[key] = True
+            new_seen[seen_key] = True
             events.append({
                 "type": "whale_move",
-                "key": f"{m['cik']}:{m['cusip']}",
+                "key": self._whale_key(m),
                 "name": f"{m['fund']} · {m['security']}",
                 "ts": ts,
                 "headline": (
@@ -473,11 +486,11 @@ class Simons(Telescope):
         if not moves:
             return None
         rows = [{
-            # Same key whale_move events use (fund+security, not the
-            # per-filing accession) -- so watching a row here matches this
-            # fund's future moves on this security, not just the filing
-            # that happened to be on the board when it was starred.
-            "key": f"{m['cik']}:{m['cusip']}",
+            # Same helper whale_move events use for their own key -- so
+            # watching a row here matches this fund's future moves on this
+            # security, not just the filing that happened to be on the
+            # board when it was starred.
+            "key": self._whale_key(m),
             "fund": m["fund"],
             "security": m["security"],
             "prior_value": m["prior_value"],
