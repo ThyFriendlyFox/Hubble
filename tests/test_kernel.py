@@ -414,6 +414,68 @@ def test_record_skips_saving_a_new_snapshot_when_nothing_changed():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_snapshot_store_latest_treats_a_corrupted_file_as_none():
+    """A snapshot file truncated or otherwise corrupted must degrade to
+    'nothing recorded yet', not crash every route that reads latest() --
+    found via coverage.py, the third instance this session of the same
+    corrupted-file resilience shape (Cache.get(), registry._read_state(),
+    now here)."""
+    store, tmp = _isolated_store()
+    try:
+        store._save([{"key": "a", "name": "A"}], 1000.0)
+        path = os.path.join(store.dir, store._files()[0])
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("{not valid json")
+        assert store.latest() is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_snapshot_store_load_events_treats_a_corrupted_file_as_empty():
+    store, tmp = _isolated_store()
+    try:
+        store.append_events([{"ts": 1, "type": "x"}])
+        with open(store.events_file, "w", encoding="utf-8") as f:
+            f.write("{not valid json")
+        assert store.load_events() == []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_snapshot_store_prunes_old_snapshots_beyond_keep_limit():
+    """KEEP_SNAPSHOTS bounds disk usage to the most recent N -- never
+    previously confirmed to actually prune anything, found via
+    coverage.py."""
+    store, tmp = _isolated_store()
+    try:
+        with patch("telescope.snapshots.KEEP_SNAPSHOTS", 3):
+            for i in range(5):
+                store._save([{"key": "a", "name": "A", "score": i}], 1000.0 + i)
+        assert store.count() == 3
+        assert store.latest()["rows"][0]["score"] == 4   # the most recent 3 survive
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_diff_excludes_noise_rows_from_per_row_rules_but_not_board_rules():
+    """A 'noise' row (can't really be judged) must not fire per-row event
+    rules like NewEntrantRule even if it would otherwise qualify -- but
+    board-level rules (NewLeaderRule, seeing curr_rows directly) still see
+    it, since a noisy row can still legitimately be the new #1. Never
+    directly confirmed before, found via coverage.py."""
+    store, tmp = _isolated_store(rules=[NewEntrantRule(max_rank=10), NewLeaderRule()])
+    try:
+        prev = {"rows": []}
+        noisy_new_leader = [{"key": "a", "name": "A", "rank": 1, "score": 90,
+                             "noise": True}]
+        events = store.diff(prev, noisy_new_leader, 0)
+        types = [e["type"] for e in events]
+        assert "new_leader" in types
+        assert "new_entrant" not in types
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_seed_writes_only_when_history_is_genuinely_empty():
     """seed() is Telescope._maybe_backfill's synthetic-but-real baseline --
     it must never overwrite real recorded history, only fill a true gap."""
@@ -883,6 +945,17 @@ def test_brief_build_never_calls_collect():
         assert digest["sections"][0]["leader"]["name"] == "A"
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_brief_build_skips_a_slug_that_disappears_between_the_two_registry_calls():
+    """Defensive guard: enabled_slugs() and registry.get() both read the
+    same registered-classes table, so this shouldn't diverge in normal
+    operation, but a slug that vanishes between the two calls must be
+    skipped, not take down the whole digest. Found via coverage.py."""
+    with patch.object(registry, "enabled_slugs", return_value=["ghost"]), \
+         patch.object(registry, "get", side_effect=KeyError("ghost")):
+        digest = brief.build(hours=24)
+    assert digest["sections"] == []
 
 
 # ── series analytics (Simons/Reddington shared kernel) ──────────────────────
