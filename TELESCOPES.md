@@ -24,7 +24,7 @@ Every telescope is the same six-stage pipeline:
 
 | Stage | What it does | Hubble's implementation |
 |-------|--------------|-------------------------|
-| **1. Collect** | Fetch raw records from N independent sources, each cached separately | `fetchers.py` — HuggingFace, OpenRouter, LMArena; `cache.py` TTL disk cache |
+| **1. Collect** | Fetch raw records from N independent sources, each cached separately | `fetchers.py` — HuggingFace, OpenRouter; `cache.py` TTL disk cache |
 | **2. Resolve** | Join sources onto one entity identity | `build_unified()` — keyed on HF repo id, falling back to OpenRouter slug |
 | **3. Classify** | Filter noise so junk doesn't pollute the board | `_is_noise()` regex (quant repacks, embeddings, test stubs…) |
 | **4. Rank** | Normalise every signal 0–100 across the dataset, blend with user-tunable weights, renormalise around missing signals, dampen entities with no quality signal | `ranking.py` |
@@ -86,6 +86,16 @@ notifier, the API — is inherited.
 
 ## 3. The fleet
 
+These tables were written before any telescope past Hubble existed, and for
+most of them real implementation diverged from the plan — a paid source
+turned out unnecessary, a signal turned out mathematically impossible with
+free data, a cross-telescope join fired in the opposite direction from the
+one proposed. Rather than pretend the plan was right, each row below is
+corrected against what's actually in `observatories/` today, with the
+original reasoning kept where it still explains *why* — Reddington's "the
+good data is paywalled" is exactly as true now as when it was written, it's
+just the *list* of sources that changed underneath it.
+
 ### 🔭 Hubble — AI *(operational)*
 
 The reference implementation. Entities: models. Sources: HuggingFace,
@@ -102,11 +112,11 @@ noise. Exactly the mission: detect faint idea-signals before they're obvious.*
 | | |
 |---|---|
 | **Entity** | An idea / topic / technique (e.g. "state-space models", "electric last-mile", "GLP-1 for X") |
-| **Join key** | None natural — the hardest resolve problem in the fleet. Start with a **curated watchlist of topic queries** that auto-expands (new arXiv keywords, new GH topics), graduate to embedding-cluster matching later. |
-| **Sources (all free)** | arXiv API (submission velocity per topic) · Semantic Scholar API (citation acceleration) · HN Algolia API (mention velocity, points) · GitHub search (new repos per topic, star velocity) · PyPI/npm download stats (builder adoption) · Wikipedia pageviews API · Google Trends via pytrends (unofficial) · Reddit API |
-| **Signals** | mention velocity · citation acceleration · builder adoption · search interest · **cross-source spread** (how many independent surfaces an idea appears on — Holmdel's version of Hubble's quality dampener: an idea seen in only one place gets dampened) |
-| **Events** | `faint_signal` — first time a topic clears noise floor on ≥2 sources · `breakout` — big climber · `crossing_over` — moved from papers to repos (research → builders, the highest-value transition) |
-| **Hard part** | Entity resolution. Ship v1 with ~50 hand-picked topics and let the diff engine prove value before automating discovery. |
+| **Join key** | None natural — the hardest resolve problem in the fleet. Shipped with a **curated watchlist of ~32 topic queries**; auto-expansion via the UNLISTED panel (trending HN stories matching none of the watchlist) landed as the discovery aid, full embedding-cluster resolution is still open — see `ROADMAP.md`. |
+| **Sources (all free, no keys)** — *shipped, not the original plan below* | HN Algolia (story velocity, peak score, two adjacent windows) · Wikipedia pageviews (curiosity) · npm downloads (builder adoption, where a canonical package exists) · OpenAlex (paper velocity, quoted-phrase match — works unauthenticated) · arXiv (preprint velocity, kept independent from OpenAlex, which already ingests arXiv and would double-count if summed) · GitHub search (new-repo velocity, peak stars, 10 req/min unauthenticated). Semantic Scholar was tried and stays unusable (its unauthenticated quota is a small pool shared globally by every unkeyed caller, confirmed by retrying with backoff, not a proxy artifact); Google Trends and Reddit were only ever early-planning ideas below, never attempted; PyPI download stats were tried, also rate-limited, npm shipped instead. |
+| **Signals** | HN/Wikipedia/OpenAlex/arXiv/GitHub growth (percent change between two adjacent windows, gated on a minimum combined volume so 1→6 stories can't read as a +500% spike) · raw volume/peak per surface · **cross-source spread** (how many of the six surfaces report the topic at all — Holmdel's version of Hubble's quality dampener) |
+| **Events** | `faint_signal` — HN volume jump · `breakout` — Wikipedia curiosity jump · `research_signal` — paper or preprint growth (OpenAlex and arXiv each fire their own, since either source can be down independently of the other) · `repo_signal` — new-repo growth · `crossing_over` — a topic's papers/preprints accelerated last sweep and its repos are now following (research → builders, the highest-value transition, and the reason `telescope/events.py` has a dedicated `CrossoverRule`) |
+| **Hard part** | Entity resolution. Shipped with ~32 hand-picked topics; the diff engine has since proven real value on them (real `crossing_over` fires have happened in production), so the case for automating discovery is stronger now than when this was written speculatively. |
 
 ---
 
@@ -114,12 +124,12 @@ noise. Exactly the mission: detect faint idea-signals before they're obvious.*
 
 | | |
 |---|---|
-| **Entity** | A lane / mode / region (e.g. "China → US West Coast ocean", "US dry-van truckload spot", "transatlantic air") |
-| **Join key** | Easy — lanes are a fixed, hand-defined universe. |
-| **Sources** | Freightos Baltic Index (FBX, daily, public page) · Drewry World Container Index (weekly, public) · Baltic Dry Index · EIA diesel & jet fuel (free API) · Cass Freight Index (monthly, public) · BTS freight data · port-published dwell/throughput stats. **Tier-2 (paid, if it earns it):** DAT spot rates, MarineTraffic congestion. |
-| **Signals** | spot rate level · rate 7/30-day delta · fuel cost · congestion/dwell · demand indices |
-| **Events** | `rate_spike` / `rate_drop` (the `price_drop` rule, generalised to ±) · `congestion_alert` · `capacity_crunch` (rate up + dwell up simultaneously) |
-| **Hard part** | The best data is paywalled. Free tier gives you index-level (not lane-level) resolution — still enough for a "state of freight" telescope that announces regime shifts. |
+| **Entity** | A gauge (an economic series — tonnage, a freight-carrier equity), not the lane / mode / region ("China → US West Coast ocean") originally planned — the lane-level universe below turned out unreachable for free, so the join-key question mooted itself. |
+| **Join key** | N/A — a fixed, hand-defined universe of ~12 series, same as the lanes originally planned would have been, just not lanes. |
+| **Sources (shipped, not the plan below)** | FRED — truck tonnage, rail carloads, freight TSI (BTS all-mode index), diesel retail & Gulf spot, PPI trucking & general-freight LTL, all free and keyless · Yahoo Finance — BDRY (dry-bulk futures, the closest free proxy for the Baltic Dry Index), ZIM/MATX (ocean carriers), FDX (parcel), XPO (LTL trucking). None of the sources originally scoped below (FBX, Drewry, the Baltic Dry Index itself, EIA, Cass, BTS's own site, port dwell stats, DAT, MarineTraffic) were ever integrated — every one of them is either paywalled or was superseded once FRED/Yahoo proved a real national-index-level instrument was reachable for free, so the "paid-tier decision" this doc used to say Reddington was pending never had to be made. |
+| **Signals** | abnormality (z-score vs trailing normal, the same framing Simons uses) · 1-period/3-period move · 5-year range extremity · volatility expansion — level and delta, not the FBX/DAT-style lane rate this section originally specified |
+| **Events** | `rate_spike` / `rate_drop` (a gauge crossing ±8% — the fuel/PPI/volume series here move on a different scale than Hubble's `price_drop` it was generalised from) |
+| **Hard part** | The best data is paywalled, confirmed rather than assumed: lane-level spot rates (DAT), container indices (FBX/Drewry) and port dwell times all sit behind commercial licences. Free tier gives you national index-level, not lane-level, resolution — enough for a "state of freight" instrument that ranks by abnormality and announces regime shifts, not enough for `congestion_alert`/`capacity_crunch`-style dwell-time events, which were never built for lack of a free dwell/congestion source. |
 
 ---
 
@@ -127,12 +137,12 @@ noise. Exactly the mission: detect faint idea-signals before they're obvious.*
 
 | | |
 |---|---|
-| **Entity** | Two boards in one telescope: **programs/tech areas** (hypersonics, counter-UAS, space domain awareness…) and **vendors** |
-| **Join key** | Programs: hand-defined taxonomy mapped to solicitation keywords + budget line items. Vendors: DUNS/UEI — an actual government-issued join key. |
-| **Sources (all free & public)** | USAspending.gov API (contract obligations, the ground truth) · SAM.gov opportunities API (solicitations = leading indicator) · defense.gov daily contract announcements (>$7.5M awards) · SBIR/STTR awards API (early-stage tech signal) · DoD comptroller budget justification docs · GAO reports |
-| **Signals** | obligation velocity per program · new-solicitation rate per tech area · SBIR award clustering (where DoD is seeding startups) · vendor win rate & concentration |
-| **Events** | `big_award` · `new_program` (budget line appears) · `budget_shift` (program's obligations ±X% YoY) · `rising_vendor` (the `big_climber` rule on the vendor board) |
-| **Notes** | Cleanest data in the fleet — all public procurement, keyed, machine-readable. **Bonus:** the SBIR feed is also a dealflow input for Kepler (below). |
+| **Entity** | Two boards in one telescope, as planned: the primary board ranks **prime contractors** by trailing-12m obligations and momentum; the **CAPABILITY AREAS** secondary panel ranks PSC product/service codes the same way `programs/tech areas` below envisioned. |
+| **Join key** | Vendors: UEI, the actual government-issued join key, exactly as planned — several UEIs per large prime (e.g. Lockheed) collapsed onto one entity by normalised name. Programs: PSC code, not the hand-defined taxonomy originally scoped — USAspending's own category breakdown turned out to be the real, structured version of "tech area" this doc was reaching for. |
+| **Sources (all free & public)** | USAspending.gov (`spending_by_category`/`spending_by_award`: obligations by recipient and by PSC code, the ground truth) · SBIR.gov (recent DoD awards — persistently rate-limited/unavailable in practice, see the caveat) · Kepler (cross-reference, for the UNMAPPED panel below). SAM.gov opportunities is still blocked without a registered API key, confirmed live nearly every iteration (`404` on the public search path); defense.gov contract announcements, DoD comptroller budget justification docs and GAO reports were never attempted. |
+| **Signals** | obligations (trailing 12m) · momentum (% vs prior 12m) · award count · avg award size. **Vendor win rate & concentration** was attempted and correctly reverted, not shipped: USAspending's `Award Amount` field is a contract's total lifetime value, not the amount obligated within any requested window, so dividing it by a real 12-month obligations figure produced results like 140%+ concentration — apples to oranges regardless of the ratio, not fixable without the priced-out transaction-level API. See `ROADMAP.md`. |
+| **Events** | `new_leader` / `big_climber` (primary board) · `new_prime` · `big_award` / `funding_drop` (±30%, $50M+) · `new_program` / `budget_shift` on the CAPABILITY AREAS panel — a real budget line appearing or an existing one moving ±30%/$50M+, tracked against the last-announced amount so slow drift still eventually crosses the bar |
+| **Notes** | Cleanest data in the fleet — all public procurement, keyed, machine-readable. The SBIR-feed-as-Kepler-dealflow-input join below is still blocked: Jackson's own SBIR fetch has 429/403'd essentially every real request this project's whole testing history, worse than "rate-limits hard," so nothing is built on top of it. Kepler feeds Jackson instead (the UNMAPPED panel), the reverse of what this row originally proposed. |
 
 ---
 
@@ -140,12 +150,12 @@ noise. Exactly the mission: detect faint idea-signals before they're obvious.*
 
 | | |
 |---|---|
-| **Entity** | Markets/regimes on one board (rates, credit, equities factors, crypto, commodities), funds/whales on another |
-| **Join key** | Tickers/series IDs (markets) · CIK numbers (funds — SEC-issued, exact) |
-| **Sources** | FRED API (free — the macro backbone) · Treasury yield API · SEC EDGAR 13F filings (whale position deltas, free) · SEC Form ADV · CoinGecko (free tier) · ETF flow proxies via volume/AUM |
-| **Signals** | regime indicators (curve shape, credit spreads, real rates) · 13F position deltas · flows · realised vol |
-| **Events** | `regime_change` (indicator crosses a defined boundary) · `whale_move` (13F delta above threshold) · `flow_reversal` |
-| **Hard part** | Latency honesty: 13Fs are 45 days delayed. Simons sees *the recent past with great clarity* — it's an allocation-posture instrument, not a trading signal. Say so on the dashboard. |
+| **Entity** | Markets/regimes on one board (rates, curve, credit, risk, equities, crypto), funds/whales on the WHALE MOVES panel, as planned — plus a third panel not originally scoped: AI CAPEX WATCH, a cross-telescope join with Hubble (see §5). |
+| **Join key** | Series ID (markets, via `telescope/series.py`'s shared FRED/Yahoo/CoinGecko adapters) · CIK (funds — SEC-issued, exact), exactly as planned |
+| **Sources** | FRED (rates, curve, credit spreads, breakevens, VIX, dollar, oil — Treasury yields included, no separate Treasury API needed) · Yahoo Finance (equity/bond/commodity ETF closes, including SMH for the AI CAPEX panel) · CoinGecko (BTC/ETH) · SEC EDGAR 13F-HR (a curated ~10-filer watchlist, CUSIP-summed within a filing to avoid double-counting a position split across manager rows) · Hubble (cross-reference). SEC Form ADV and ETF flow/AUM proxies were never attempted. |
+| **Signals** | abnormality (z-score) · 1m/3m move · 5-year range extremity · vol expansion — "attention", not "level", is the ranking axis, same framing as Reddington above |
+| **Events** | `regime_change` (yield curve crossing zero) · `whale_move` (a 13F delta above $10M, first time a qualifying quarterly filing produces one — persisted so an immutable filing never re-announces). `flow_reversal` was never built — no flow-proxy source exists to base it on. |
+| **Hard part** | Latency honesty: 13Fs are 45 days delayed. Simons sees *the recent past with great clarity* — it's an allocation-posture instrument, not a trading signal. Said so on the dashboard, in the caveat, and on the WHALE MOVES panel itself. |
 
 ---
 
@@ -163,13 +173,13 @@ network-inward; Kepler is signal-detection, outside-in. The overlap report
 
 | | |
 |---|---|
-| **Entity** | A company. **Join key: the domain name** — the best natural key in the fleet after government IDs. Fuzzy company-name matching as fallback. |
-| **Sources** | **SEC EDGAR Form D** (free — every US raise must file within 15 days of first sale, often *before* any press; new filer + no press = stealth raise detected) · Greenhouse/Lever/Ashby public job-board JSON endpoints (hiring velocity — the single most honest traction signal) · GitHub org star/contributor velocity · HN Show HN + launch threads · Product Hunt API · YC directory · app store ranks · new-domain certificate-transparency logs (speculative, noisy). **Tier-2 (paid):** Crunchbase/PitchBook for backfill, LinkedIn headcount. |
-| **Signals** | hiring velocity · funding recency & size (Form D) · traction velocity (stars/upvotes/ranks) · team pedigree (enrichment) · cross-source spread |
-| **Weights → sliders** | The Hubble sliders become an investment-thesis dial: crank *hiring* to find quiet compounders, crank *traction* for breakouts, filter by sector/stage the way Hubble filters by params/quant. |
-| **Events** | `new_candidate` (entity clears noise floor on ≥2 sources) · `stealth_raise` (Form D from a company with no other footprint) · `hiring_surge` · `breakout_traction` |
-| **Noise classifier** | Direct port of Hubble's `_is_noise()` concept: agencies, consultancies, crypto spam, side projects — pattern-match and dampen, don't delete. |
-| **Hard part** | Entity resolution across sources (domain key + fuzzy names) and launch-day noise. Both are problems Hubble already solves in miniature. |
+| **Entity** | A company (a Form D issuer). **Join key: a guessed `.com` domain**, verified against the fetched homepage's own `<title>` — not looked up from a directory, since Form D discloses no website. Fuzzy core-name matching (corporate suffixes stripped) as the fallback when no domain resolves. |
+| **Sources** | **SEC EDGAR Form D** (free — every US raise must file within 15 days of first sale, often *before* any press; a real raise with zero public footprint is the stealth raise this telescope exists to detect) · a guessed-and-verified `.com` domain · HN Algolia (domain-precise story matching when a domain resolved, fuzzy title matching otherwise) · Greenhouse/Lever/Ashby public job-board JSON endpoints (hiring velocity — the single most honest traction signal, a guessed slug verified against Greenhouse's own board-info endpoint where available) · Holmdel (cross-reference, for the SECTOR HEAT panel). GitHub star velocity, Product Hunt, the YC directory, app store ranks, certificate-transparency logs, Crunchbase/PitchBook and LinkedIn headcount below were all considered and none were built — the domain+HN+hiring combination proved sufficient without them. |
+| **Signals** | raise size & capital-in (log-scaled) · % of round closed · recency (freshness) · public attention (HN points) · tech/deeptech flag (SEC industry code) · hiring velocity — not "team pedigree (enrichment)" or generic "traction velocity", both unbuilt |
+| **Weights → sliders** | The default weighting favours raise size and recency over buzz and hiring by design — a stealth company with zero public footprint and no hiring yet is exactly the headline case, not evidence against it, so `buzz`/`hiring` are deliberately excluded from the quality dampener. |
+| **Events** | `new_candidate` (a real raise, not yet flagged stealth) · `stealth_raise` (Form D from a company with zero public HN footprint — the headline case) · `hiring_surge` · `stealth_graduated` (a stealth-flagged issuer's first real HN story — did Kepler beat the intro?) — not `breakout_traction`, never built for lack of a traction-velocity source |
+| **Noise classifier** | A regex over fund/SPV/real-estate-syndicate language plus SEC's own `industryGroupType`, in the spirit of Hubble's `_is_noise()`: pattern-match and dampen (via excluding from ranking, not deleting the row), don't delete the filing itself. |
+| **Hard part** | Entity resolution across sources (a guessed domain + fuzzy core-name matching) — confirmed live to be genuinely risky, not just theoretically: an early real domain guess resolved to an unrelated squatted gambling site on an expired domain, which is why the fetched homepage's own `<title>` verification is load-bearing, not a formality. |
 
 ---
 
@@ -198,9 +208,12 @@ Once ≥2 telescopes exist, add the thin meta-layer:
   every telescope's events; the morning read.
 - **One notifier config** — channels and `SOCIAL_TYPES` per telescope, one
   dispatch implementation.
-- **Cross-telescope joins** are where it gets genuinely interesting:
-  Jackson SBIR award → Kepler candidate; Holmdel `crossing_over` topic →
-  Kepler sector filter; Hubble `new_leader` → Simons AI-capex watch.
+- **Cross-telescope joins** are where it gets genuinely interesting, and two
+  of the three shipped (the third, Jackson's SBIR feed → Kepler candidate,
+  stays blocked on SBIR's own unreliable API, still true today): Kepler's
+  stealth Form D feed → Jackson's UNMAPPED panel (the reverse of the
+  direction originally proposed here); Holmdel's `crossing_over` topic →
+  Kepler's SECTOR HEAT panel; Hubble's `new_leader` → Simons' AI CAPEX WATCH.
 
 ## 6. Build order (as it actually happened)
 

@@ -83,8 +83,19 @@ which makes `observatories/` all six domain packs at 100%, alongside
 `telescope/` (kernel, ~92%+ with every remaining gap a deliberately-judged
 omission) and `app.py` (75%, same standard): the whole codebase has now
 been individually, deliberately audited by this coverage.py methodology,
-not just the parts that happened to get touched by feature work.
-`roadmap.py`'s own Phase 5 entries are the detailed log — this is only the
+not just the parts that happened to get touched by feature work. Phase 6
+picked up the fallback guidance this section itself now gives: with test
+coverage exhausted, `TELESCOPES.md`'s §3 fleet tables turned out to be
+describing the *original pre-implementation plan* for five of six
+telescopes, not what actually shipped — Reddington's table named zero of
+the real FRED/Yahoo sources and instead listed only paywalled ones that
+were never integrated, Holmdel's list was missing OpenAlex (the real,
+currently-live signal) entirely, and several documented events (`rising_
+vendor`, `flow_reversal`, `congestion_alert`) were never built while real
+shipped ones (`stealth_graduated`, `new_program`/`budget_shift`) were
+missing. Corrected against the real `observatories/*.py` declarations,
+verified by grep, not memory. `roadmap.py`'s own Phase 5 (and now 6)
+entries are the detailed log — this is only the
 shape of it.
 
 Work is on branch `claude/telescope-dashboard-concept-lo1ay8`, open as **PR #1**.
@@ -145,6 +156,18 @@ just start installing a dependency. `roadmap.py`'s own Phase 5 entries are
 a log of the kind of iteration that still fits this section — read a few
 before starting to calibrate scope and the level of live verification
 expected.
+
+The "verify a documentation file" fallback has now had its first real pass
+too (Phase 6): `TELESCOPES.md`'s §3 fleet tables and `README.md`'s Tests/
+Layout sections were checked against current reality and corrected — don't
+re-do that specific pass without a reason (new code changing what's
+described, or a doc not yet covered). `HANDOFF.md`'s own "State" narrative
+above is kept current every iteration already, by convention, not as a
+one-off. Untouched so far: `ROADMAP.md` is generated so it can't drift on
+its own; `app.js`/`style.css`/`index.html` have no prose docs to drift
+from; a systematic read of every domain pack's own module docstring against
+its current `observatories/*.py` body hasn't been done as its own pass —
+plausible next candidate if this fallback comes up again.
 
 ## Then work the roadmap
 

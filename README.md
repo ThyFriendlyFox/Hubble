@@ -146,8 +146,9 @@ An instrument that doesn't state its blind spots invites you to over-trust it.
 ## Tests
 
 ```bash
-python -m pytest tests/test_kernel.py -q   # pure logic, no network
-python -m pytest tests/test_live.py -q     # hits every real source
+python -m pytest tests/test_kernel.py -q         # kernel pure logic, no network
+python -m pytest tests/test_observatories.py -q  # domain-pack logic, mocked network
+python -m pytest tests/test_live.py -q           # hits every real source
 ```
 
 `test_live.py` deliberately queries the live APIs rather than fixtures — a
@@ -155,6 +156,14 @@ fixture passing while the upstream source changed shape is exactly the failure
 worth catching. It asserts each telescope returns enough rows, that every
 declared signal and column is actually populated, that weights genuinely
 re-rank, and that the diff engine emits fully-rendered headlines.
+
+`test_observatories.py` covers the middle ground neither of the other two
+suites does: a domain pack's own business logic (entity-name matching, a
+multi-source fallback chain, XML field extraction) by mocking `telescope/
+http.py`'s fetch primitives directly, so it's pinned without touching the
+network — including logic `test_live.py`'s warm-cache fixtures often never
+reach at all, since a cache hit skips the producer function that logic lives
+in.
 
 ## Layout
 
@@ -171,6 +180,10 @@ telescope/           the kernel — domain-agnostic
   cache.py http.py notifier.py
 observatories/       one module per telescope — the only domain-specific code
 templates/ static/   one generic frontend, driven by telescope metadata
+tests/
+  test_kernel.py         kernel pure logic, no network
+  test_observatories.py  domain-pack logic, mocked network
+  test_live.py           hits every real source
 ```
 
 See [ROADMAP.md](ROADMAP.md) for what's next and [TELESCOPES.md](TELESCOPES.md)
