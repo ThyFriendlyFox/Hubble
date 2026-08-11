@@ -473,6 +473,11 @@ class Simons(Telescope):
         if not moves:
             return None
         rows = [{
+            # Same key whale_move events use (fund+security, not the
+            # per-filing accession) -- so watching a row here matches this
+            # fund's future moves on this security, not just the filing
+            # that happened to be on the board when it was starred.
+            "key": f"{m['cik']}:{m['cusip']}",
             "fund": m["fund"],
             "security": m["security"],
             "prior_value": m["prior_value"],

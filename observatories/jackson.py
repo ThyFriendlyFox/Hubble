@@ -432,6 +432,10 @@ class Jackson(Telescope):
             prev = pri.get(p.get("code"))
             growth = round((amount - prev) / prev * 100, 1) if prev else None
             rows.append({
+                # Same key new_program/budget_shift events use -- a generic
+                # alias so the frontend can offer watching on any panel
+                # without needing to know each panel's own field names.
+                "key": p.get("code"),
                 "code": p.get("code"),
                 "name": (p.get("name") or "").title(),
                 "amount": amount,

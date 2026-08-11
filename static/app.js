@@ -599,21 +599,35 @@ function renderPanel() {
   $("#panels-container").innerHTML = panels
     .map((p, i) => {
       const rows = sortPanelRows(p.rows, panelSort[i]);
-      const head = p.columns
-        .map(
-          (c) =>
-            `<th class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}" data-panel="${i}" data-sort="${c.field}">${esc(c.label)}</th>`
-        )
-        .join("");
+      // Only panels whose rows carry a stable "key" (currently WHALE MOVES
+      // and CAPABILITY AREAS, both of which now fire real feed events) can
+      // be watched -- panels like SECTOR HEAT/UNMAPPED that are pure
+      // cross-telescope reads with no event of their own don't get a star
+      // column at all, rather than offering a star that can never actually
+      // match anything in the feed.
+      const watchable = rows.length > 0 && rows[0].key !== undefined;
+      const head =
+        (watchable ? `<th class="watch-th"></th>` : "") +
+        p.columns
+          .map(
+            (c) =>
+              `<th class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}" data-panel="${i}" data-sort="${c.field}">${esc(c.label)}</th>`
+          )
+          .join("");
       const body = rows
-        .map(
-          (r) =>
+        .map((r) => {
+          const star = watchable
+            ? `<td class="watch-cell${isWatched(state.slug, r.key) ? " on" : ""}" data-panel-key="${esc(r.key)}">${isWatched(state.slug, r.key) ? "★" : "☆"}</td>`
+            : "";
+          return (
             "<tr>" +
+            star +
             p.columns
               .map((c) => `<td class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}">${cell(r, c)}</td>`)
               .join("") +
             "</tr>"
-        )
+          );
+        })
         .join("");
       return `<section>
         <div class="section-label"><span>${String(4 + i).padStart(2, "0")}</span> <em>${esc(p.title)}</em></div>
@@ -626,6 +640,12 @@ function renderPanel() {
     .join("");
 }
 $("#panels-container").addEventListener("click", (e) => {
+  const star = e.target.closest(".watch-cell");
+  if (star) {
+    toggleWatch(state.slug, star.dataset.panelKey);
+    renderPanel();
+    return;
+  }
   const th = e.target.closest("th[data-sort]");
   if (!th) return;
   const i = +th.dataset.panel;
