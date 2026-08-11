@@ -1073,6 +1073,31 @@ def test_try_json_returns_default_on_permanent_failure():
                              default="fallback") == "fallback"
 
 
+def test_post_json_merges_headers_and_returns_parsed_body():
+    """post_json's own header-merging (Content-Type plus whatever the
+    caller passes) had never been exercised by a mocked test -- only
+    live, via Jackson's real USAspending POSTs -- found via coverage.py."""
+    with patch("telescope.http.requests.request",
+               return_value=_FakeResponse(200, json_data={"ok": True})) as mock_req:
+        result = http.post_json("https://example.test/search", {"q": "x"},
+                                headers={"X-Custom": "1"})
+    assert result == {"ok": True}
+    call_headers = mock_req.call_args.kwargs["headers"]
+    assert call_headers["Content-Type"] == "application/json"
+    assert call_headers["X-Custom"] == "1"
+
+
+def test_try_text_returns_default_on_permanent_failure():
+    """try_json's exact counterpart for text responses (arXiv's Atom feed,
+    SEC's XML) -- try_json's version of this had a test, try_text's never
+    did, found via coverage.py."""
+    with patch("telescope.http.requests.request",
+               return_value=_FakeResponse(404)), \
+         patch("telescope.http.time.sleep"):
+        assert http.try_text("https://example.test/missing",
+                             default="fallback") == "fallback"
+
+
 def test_probe_text_makes_exactly_one_attempt():
     """probe_text is for speculative guesses (most wrong, e.g. a guessed
     company domain) -- it must never retry, unlike get_text/try_text's
@@ -1083,6 +1108,21 @@ def test_probe_text_makes_exactly_one_attempt():
                side_effect=requests.ConnectionError("boom")) as mock_get:
         assert http.probe_text("https://guessed-domain.test/") is None
     assert mock_get.call_count == 1
+
+
+def test_probe_text_returns_real_text_on_success():
+    """The success path itself -- only the give-up-cleanly failure path
+    above had ever been tested, found via coverage.py. A guessed domain
+    that DOES resolve is the entire reason this function exists (Kepler's
+    entity resolution), not just the common failure case. Passes a custom
+    header too, closing the one remaining gap: probe_text's own
+    if-headers-merge branch had never run either."""
+    with patch("telescope.http.requests.get",
+               return_value=_FakeResponse(200, text="<title>Real Co</title>")) as mock_get:
+        result = http.probe_text("https://real-domain.test/",
+                                 headers={"X-Custom": "1"})
+    assert result == "<title>Real Co</title>"
+    assert mock_get.call_args.kwargs["headers"]["X-Custom"] == "1"
 
 
 # ── shared parsing helpers (telescope/http.py, telescope/parse.py) ──────

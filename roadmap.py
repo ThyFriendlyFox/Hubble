@@ -1974,6 +1974,30 @@ PHASES = [
                        "three adapters' network-touching bodies, already "
                        "covered by test_live.py's real fetches, correctly "
                        "left to that suite)"},
+            {"name": "Closed telescope/http.py to 100% kernel-suite "
+                     "coverage", "done": True,
+             "detail": "third module in the coverage.py sweep (notifier.py "
+                       "56%->82%, series.py 86%->91%), and http.py — the "
+                       "single most load-bearing module in the whole "
+                       "kernel, every fetcher in the fleet goes through it "
+                       "— was sitting at 83%. Found three real gaps: "
+                       "try_text()'s exception-swallowing path had no test "
+                       "of its own even though try_json's exact counterpart "
+                       "did; probe_text()'s actual success path (return "
+                       "real text) had never been tested, only its give-up-"
+                       "cleanly failure path — a real gap, since a guessed "
+                       "domain that DOES resolve is the entire reason "
+                       "Kepler's entity resolution calls this function at "
+                       "all; and post_json()'s own header-merging (Content-"
+                       "Type plus whatever the caller passes) had never "
+                       "been exercised by a mocked test, only live via "
+                       "Jackson's real USAspending POSTs. Added 3 tests "
+                       "mirroring get_json's/try_json's already-tested "
+                       "patterns, then closed the one remaining line "
+                       "(probe_text's own header-merge branch) by adding a "
+                       "custom header to the success-path test rather than "
+                       "writing a fourth near-duplicate test. "
+                       "telescope/http.py: 83% -> 100%"},
         ],
     },
 ]
