@@ -1439,6 +1439,32 @@ def test_set_enabled_persists_without_clobbering_other_slugs():
             assert registry.is_enabled("fake_b") is True
 
 
+def test_read_state_treats_a_corrupted_state_file_as_empty():
+    """data/observatory.json truncated mid-write or otherwise corrupted
+    must degrade to 'nothing persisted yet' (falling back to the env
+    default), not crash every route that touches registry.state() --
+    found via coverage.py, the same corrupted-file resilience shape
+    Cache.get() was just given its own test for."""
+    with _isolated_registry():
+        registry.register(_FakeTelescope)
+        os.makedirs(os.path.dirname(registry.STATE_FILE), exist_ok=True)
+        with open(registry.STATE_FILE, "w", encoding="utf-8") as fh:
+            fh.write("{not valid json")
+        with patch.dict(os.environ, {"OBSERVATORY_ENABLED": "fake_a"}, clear=True):
+            assert registry.state() == {"fake_a": True}
+
+
+def test_load_errors_returns_an_independent_copy():
+    """A caller mutating the returned dict must not corrupt the registry's
+    own internal error table."""
+    with _isolated_registry():
+        registry._load_errors["broken_pack"] = "ImportError: boom"
+        errors = registry.load_errors()
+        assert errors == {"broken_pack": "ImportError: boom"}
+        errors["broken_pack"] = "mutated"
+        assert registry._load_errors["broken_pack"] == "ImportError: boom"
+
+
 def test_set_enabled_unknown_slug_raises():
     with _isolated_registry():
         try:

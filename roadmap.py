@@ -2033,6 +2033,31 @@ PHASES = [
                        "producer also fails — judged too rare to chase "
                        "further, the same bar applied to http.py's/"
                        "notifier.py's remaining gaps"},
+            {"name": "Closed telescope/registry.py to 86% kernel-suite "
+                     "coverage", "done": True,
+             "detail": "fifth module in the coverage.py sweep (notifier."
+                       "py, series.py, http.py, cache.py). Found the exact "
+                       "same corrupted-file resilience gap Cache.get() "
+                       "just got closed for, this time in registry."
+                       "_read_state(): data/observatory.json truncated or "
+                       "otherwise corrupted must degrade to 'nothing "
+                       "persisted yet' (falling back to the env default), "
+                       "not crash every single route that touches "
+                       "registry.state() — every route in app.py does. "
+                       "Also closed load_errors() — confirmed it returns a "
+                       "genuine independent copy of the internal error "
+                       "table, not a live reference a caller could "
+                       "accidentally corrupt by mutating what they got "
+                       "back. Left discover()'s own body (lines 33-45) "
+                       "uncovered at the kernel level deliberately — it's "
+                       "fundamentally about importing the real "
+                       "observatories/ package, an integration concern "
+                       "already exercised by test_live.py's own module-"
+                       "level registry.discover() call and its "
+                       "test_no_domain_pack_failed_to_import assertion, "
+                       "not something that belongs behind a 'no network' "
+                       "kernel test. telescope/registry.py: 82% -> 86% "
+                       "(kernel-only)"},
         ],
     },
 ]
