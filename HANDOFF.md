@@ -111,9 +111,16 @@ checking `get()` after acquiring it so a blocked second caller becomes
 a cache hit instead of a second redundant fetch — a different failure
 mode from the `Cache.set()` tmp-path race fixed in Phase 5 (that one
 was concurrent *writers* colliding; this one is concurrent cache-*miss*
-callers each redundantly paying the full cost). `roadmap.py`'s own
-Phase 5, 6 and 7 entries are the detailed log — this is only the
-shape of it.
+callers each redundantly paying the full cost). The fuller live-browser
+pass that finding's own follow-up called for happened next: Jackson's
+and Simons' boards (both previously unchecked), SAVE VIEW's apply/delete
+cycle, and the TELESCOPES tab's on/off toggle all verified live and all
+correct — no new bug this time, a real, honest result in its own right.
+Mobile/narrow-viewport rendering is still genuinely unverified — this
+session's own `resize_window` tool stopped reporting a consistent
+viewport partway through, a tooling problem, not a finding about the
+app either way. `roadmap.py`'s own Phase 5, 6 and 7 entries are the
+detailed log — this is only the shape of it.
 
 Work is on branch `claude/telescope-dashboard-concept-lo1ay8`, open as **PR #1**.
 Pushing to that branch updates the PR — do not open a new one.
@@ -192,16 +199,24 @@ from; a systematic read of every domain pack's own module docstring against
 its current `observatories/*.py` body hasn't been done as its own pass —
 plausible next candidate if this fallback comes up again.
 
-The "drive the dashboard in a real browser" fallback (Phase 7) has had one
-real pass, not a systematic one — it stopped at the first real bug found
-(the cache stampede), not after confirming every tab/interaction across
-every telescope. A fuller pass (every telescope's board, not just Kepler's;
-the SAVE VIEW / watched-only / hide-noise controls; actually toggling a
-telescope off and back on; dark-mode or narrow-viewport rendering) is a
-plausible next candidate, and re-checking Holmdel's board specifically is
-worth doing once GitHub's rate limit this session's own testing likely
-triggered has had time to clear — that's an external, temporary condition,
-not something to chase further right now.
+The "drive the dashboard in a real browser" fallback (Phase 7) has now had
+two passes. The first found the cache stampede. The second drove Jackson's
+and Simons' boards, SAVE VIEW's apply/delete, and the telescope toggle,
+all correct — a real, honest "nothing wrong here" result, not a gap. Still
+genuinely unverified: mobile/narrow-viewport and dark-mode rendering (this
+session's own `resize_window` tool got unreliable partway through the
+second pass — a tooling problem, not an app finding either way, so don't
+read anything into it) and SAVE VIEW's *create* half specifically (it uses
+a native `prompt()` that this session's automation can't drive; the code
+itself looks fine on inspection, and a real user would have no trouble,
+but it's never been clicked through end-to-end live). Holmdel's board is
+still slow as of this writing — not the stampede returning (`github.json`
+was rewritten cleanly once already since the fix landed, proving a full
+sweep completes), but OpenAlex specifically stuck retrying for 20+ minutes
+with zero progress, consistent with this session's own testing having
+exhausted OpenAlex's small daily budget (documented above to reset only
+at midnight UTC). Check the current time against that reset before reading
+anything into Holmdel being slow on the next iteration.
 
 ## Then work the roadmap
 
