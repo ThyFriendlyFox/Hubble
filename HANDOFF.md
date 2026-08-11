@@ -221,9 +221,21 @@ described, or a doc not yet covered). `HANDOFF.md`'s own "State" narrative
 above is kept current every iteration already, by convention, not as a
 one-off. Untouched so far: `ROADMAP.md` is generated so it can't drift on
 its own; `app.js`/`style.css`/`index.html` have no prose docs to drift
-from; a systematic read of every domain pack's own module docstring against
-its current `observatories/*.py` body hasn't been done as its own pass —
-plausible next candidate if this fallback comes up again.
+from. The domain-pack-docstring-vs-code pass has now happened: Holmdel's
+and Simons' docstrings checked out with zero drift (every window size,
+rate limit, event name and design-reasoning claim verified against the
+current code line by line); Kepler/Hubble/Reddington have no status-code
+or specific-number claims to drift in the first place. Jackson's had a
+real one, though — both its module docstring and its live board caveat
+said SBIR.gov "429s," but every re-probe this session on the actual
+endpoint the code calls has come back 403, never 429. HANDOFF.md's own
+blocked-sources table and the code's own inline comment already said
+"429/403"; Jackson's docstring and caveat were the two places still
+narrower than reality. Fixed both, verified live against the running
+dev server that the corrected caveat text is what `/api/telescope/jackson`
+actually serves. Don't re-run this specific pass without a reason (new
+domain-pack code, or a specific claim worth re-checking) — it's done,
+not still open.
 
 The "drive the dashboard in a real browser" fallback (Phase 7) has now had
 four passes and its original punch list is fully resolved. First: the
@@ -259,9 +271,7 @@ assuming it's cleared) to confirm the board loads in a normal
 few-minutes cold-sweep time rather than the multi-hour grind this
 session's own testing caused — that's re-verifying a known, explained,
 temporary condition clears on schedule, not re-treading already-covered
-ground. A systematic domain-pack-docstring-vs-code audit (the Phase 6
-documentation fallback's own flagged next candidate) is still
-unstarted too.
+ground.
 
 ## Then work the roadmap
 

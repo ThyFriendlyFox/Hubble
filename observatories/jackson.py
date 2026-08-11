@@ -14,13 +14,14 @@ Sources (all public, no keys):
                    panel: which capability areas are growing
   SBIR.gov         recent DoD SBIR/STTR awards — the early-stage signal for
                    where the department is seeding new tech. Persistently
-                   429s ("Public API is not available") for this
-                   deployment's entire real testing history, not an
-                   occasional hiccup — cache-poisoning-protected (an
-                   is_empty guard, so a stale real cache hit would be kept
-                   over a fresh empty one) but genuinely producing nothing
-                   right now; stated honestly on the board's own caveat,
-                   not just here
+                   blocked for this deployment's entire real testing
+                   history, not an occasional hiccup — inconsistently a
+                   429 ("Public API is not available") or a plain 403
+                   ("Forbidden"), never a clean success — cache-poisoning-
+                   protected (an is_empty guard, so a stale real cache hit
+                   would be kept over a fresh empty one) but genuinely
+                   producing nothing right now; stated honestly on the
+                   board's own caveat, not just here
 
 Latency note: USAspending lags actual award announcements by days to weeks, so
 Jackson is a "where has the money moved" instrument, not a newswire.
@@ -189,9 +190,10 @@ class Jackson(Telescope):
               "nothing at all: obvious-by-name defense filers are rare in "
               "any given 12-day window, which is expected, not a bug. "
               "SBIR listed above as a source has been persistently "
-              "unavailable (a 429 'Public API is not available' from "
-              "SBIR.gov itself, not a proxy or key issue) for this "
-              "deployment's entire real testing history — the CAPABILITY "
+              "unavailable (inconsistently a 429 'Public API is not "
+              "available' or a plain 403 'Forbidden', both from SBIR.gov "
+              "itself, not a proxy or key issue) for this deployment's "
+              "entire real testing history — the CAPABILITY "
               "AREAS panel's SBIR award count silently doesn't appear "
               "rather than showing zero, which looks identical to 'no "
               "awards this window' unless you already know the source is "
