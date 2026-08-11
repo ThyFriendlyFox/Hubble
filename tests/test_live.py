@@ -80,6 +80,13 @@ def test_keys_are_unique(scope_rows):
     assert len(keys) == len(set(keys)), f"{scope.slug} has duplicate keys"
 
 
+def _assert_no_entity_leak(slug, where, name):
+    assert not re.search(r"&(amp|lt|gt|quot|#\d+);", name or ""), (
+        f"{slug}: {where} name {name!r} looks like un-decoded XML/HTML "
+        "entity leakage"
+    )
+
+
 def test_names_have_no_leaked_xml_or_html_entities(scope_rows):
     """Caught live: SEC's primary_doc.xml legitimately XML-escapes company
     names (valid XML requires it), and kepler.py's _tag() used to extract
@@ -90,14 +97,31 @@ def test_names_have_no_leaked_xml_or_html_entities(scope_rows):
     once the frontend started escaping correctly. Any leaked "&amp;"/
     "&lt;"/"&gt;" in a real entity name means some fetcher is extracting
     XML/HTML text without decoding it -- not fixture data, so this is
-    fleet-wide, not Kepler-specific."""
+    fleet-wide, not Kepler-specific.
+
+    Checks panel rows too, not just the primary board -- simons.py's own
+    13F-parsing _tag() had the exact same bug (SPDR S&amp;P 500 ETF TR,
+    JPMORGAN CHASE &amp; CO. in the real WHALE MOVES panel) and this test
+    would have missed it entirely if scoped to board rows alone, since
+    Simons' primary board is curated FRED/Yahoo/CoinGecko series names
+    with no XML in their path at all. Checks every fmt="text" column a
+    panel declares, not a hardcoded "name" key -- panel rows have no fixed
+    shape (WHALE MOVES' free-text fields are "fund"/"security", not
+    "name"), so a hardcoded key would silently check nothing for panels
+    that don't happen to use it, exactly the gap that let this bug hide
+    from the first version of this test."""
     scope, rows = scope_rows
     for r in rows:
-        name = r.get("name") or ""
-        assert not re.search(r"&(amp|lt|gt|quot|#\d+);", name), (
-            f"{scope.slug}: row '{r.get('key')}' name {name!r} looks like "
-            "un-decoded XML/HTML entity leakage"
-        )
+        _assert_no_entity_leak(scope.slug, f"row '{r.get('key')}'", r.get("name"))
+    for panel in scope.panels():
+        text_fields = [c["field"] for c in panel.get("columns", [])
+                       if c.get("fmt") == "text"]
+        for r in panel.get("rows", []):
+            for field in text_fields:
+                _assert_no_entity_leak(
+                    scope.slug, f"panel '{panel.get('title')}' row field '{field}'",
+                    r.get(field)
+                )
 
 
 def _openalex_out_of_budget():

@@ -3,6 +3,8 @@
 One place to set the User-Agent, timeouts and retry/backoff policy so a flaky
 source degrades politely instead of taking a whole sweep down.
 """
+import html
+import re
 import time
 
 import requests
@@ -87,6 +89,22 @@ def try_text(url, default=None, **kw):
         return get_text(url, **kw)
     except SourceError:
         return default
+
+
+def xml_tag(text, name):
+    """First <name>...</name> match's text content, entity-decoded.
+
+    Lifted out of kepler.py and simons.py, which each had their own copy of
+    this exact regex extraction -- both parse SEC XML (Form D's
+    primary_doc.xml, 13F's informationTable) that legitimately escapes
+    special characters in text content (a raw "&" is illegal XML), so
+    "AT&T" round-trips as "AT&amp;T". Neither original copy decoded that
+    back, which only ever looked like a cosmetic "&amp;" instead of "&" --
+    until the frontend started HTML-escaping free text correctly, at which
+    point the un-decoded entity became a visible double-escaped glyph.
+    """
+    m = re.search(rf"<{name}>(.*?)</{name}>", text, re.S | re.I)
+    return html.unescape(m.group(1).strip()) if m else None
 
 
 def probe_text(url, timeout=6, headers=None):

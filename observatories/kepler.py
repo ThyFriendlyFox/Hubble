@@ -91,7 +91,6 @@ issuer row with `stealth` patched to simulate the transition, the same
 approach used to verify crossing_over before it had ever fired for real.
 """
 import datetime as dt
-import html
 import re
 import time
 import traceback
@@ -100,7 +99,7 @@ from urllib.parse import quote_plus, urlparse
 from telescope import Column, Signal, Telescope
 from telescope.events import (ClimberRule, DeltaRule, FlagFlipRule,
                               NewEntrantRule, NewLeaderRule, money)
-from telescope.http import get_json, get_text, probe_text, try_json
+from telescope.http import get_json, get_text, probe_text, try_json, xml_tag
 from telescope.registry import get as get_telescope, is_enabled, register
 
 SEC_UA = {"User-Agent": "Observatory-Telescope/1.0 (thyfriendlyfox@gmail.com)"}
@@ -150,19 +149,6 @@ GROUP_TO_INDUSTRIES = {
     "SPACE": {"Other Technology", "Manufacturing"},
     "SECURITY": {"Technology", "Other Technology", "Computers"},
 }
-
-
-def _tag(xml, name):
-    # SEC's primary_doc.xml legitimately XML-escapes entity names (valid XML
-    # requires it -- a raw "&" is illegal in text content), so "Legal &
-    # General ..." is served as "Legal &amp; General ...". A plain regex
-    # extraction never decodes that back, which used to only show up as a
-    # cosmetic "&amp;" instead of "&" -- now that the frontend correctly
-    # HTML-escapes free text (fixed last iteration), leaving this raw would
-    # double-escape into a literal "&amp;amp;" glyph on screen. Decode here
-    # so downstream consumers get the real name, not an XML-encoding leak.
-    m = re.search(rf"<{name}>(.*?)</{name}>", xml, re.S)
-    return html.unescape(m.group(1).strip()) if m else None
 
 
 def _num(v):
@@ -411,17 +397,17 @@ class Kepler(Telescope):
             xml = get_text(url, headers=SEC_UA)
         except Exception:
             return None
-        industry = _tag(xml, "industryGroupType")
-        offering = _num(_tag(xml, "totalOfferingAmount"))
-        sold = _num(_tag(xml, "totalAmountSold"))
-        first_sale = _tag(xml, "dateOfFirstSale") or ""
+        industry = xml_tag(xml, "industryGroupType")
+        offering = _num(xml_tag(xml, "totalOfferingAmount"))
+        sold = _num(xml_tag(xml, "totalAmountSold"))
+        first_sale = xml_tag(xml, "dateOfFirstSale") or ""
         m = re.search(r"<value>(\d{4}-\d{2}-\d{2})</value>", first_sale)
         return {
-            "entity": _tag(xml, "entityName") or filing["company"],
+            "entity": xml_tag(xml, "entityName") or filing["company"],
             "industry": industry,
             "offering_amount": offering,
             "amount_sold": sold,
-            "state": _tag(xml, "stateOrCountry"),
+            "state": xml_tag(xml, "stateOrCountry"),
             "first_sale": m.group(1) if m else None,
             "new_issuer": "<withinFiveYears>true</withinFiveYears>" in xml,
         }
@@ -436,7 +422,7 @@ class Kepler(Telescope):
                 time.sleep(SEC_DELAY)
             return out
         # Unlike _domains()/_hiring(), _detail() only ever returns None on a
-        # genuine fetch failure (get_text() raising) -- _tag()/_num() are
+        # genuine fetch failure (get_text() raising) -- xml_tag()/_num() are
         # regex/try-except helpers that never raise, so every filing whose
         # primary_doc.xml is actually reachable adds a real entry to out,
         # regardless of how sparse its individual fields are. An aggregate-

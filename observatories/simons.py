@@ -42,7 +42,7 @@ import time
 
 from telescope import Column, Signal, Telescope
 from telescope.events import ClimberRule, NewLeaderRule, ThresholdRule, money
-from telescope.http import try_json, try_text
+from telescope.http import try_json, try_text, xml_tag
 from telescope.registry import register
 from telescope.series import Series, change, fetch_panel, historical_panel
 
@@ -74,11 +74,6 @@ WHALES = (
 )
 
 _INFO_TABLE_RE = re.compile(r"<infoTable>(.*?)</infoTable>", re.S | re.I)
-
-
-def _tag(block, name):
-    m = re.search(rf"<{name}>(.*?)</{name}>", block, re.S | re.I)
-    return m.group(1).strip() if m else None
 
 
 def _num(v):
@@ -307,11 +302,11 @@ class Simons(Telescope):
             return {}
         out = {}
         for block in _INFO_TABLE_RE.findall(xml):
-            cusip = _tag(block, "cusip")
+            cusip = xml_tag(block, "cusip")
             if not cusip:
                 continue
-            value = _num(_tag(block, "value")) or 0.0
-            name = _tag(block, "nameOfIssuer") or cusip
+            value = _num(xml_tag(block, "value")) or 0.0
+            name = xml_tag(block, "nameOfIssuer") or cusip
             slot = out.setdefault(cusip, {"name": name, "value": 0.0})
             slot["value"] += value
         return out

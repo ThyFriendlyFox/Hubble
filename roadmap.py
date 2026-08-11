@@ -1433,6 +1433,39 @@ PHASES = [
                        "since this class of bug (extracting raw XML/HTML "
                        "text without decoding) could recur in any fetcher, "
                        "not just Kepler's"},
+            {"name": "Same XML-entity bug found (and fixed) in Simons' 13F "
+                     "parsing, plus a real test-coverage gap it exposed",
+             "done": True,
+             "detail": "Kepler's _tag() wasn't the only copy — simons.py "
+                       "had its own byte-for-byte identical XML-tag-"
+                       "extraction helper for 13F informationTable parsing, "
+                       "same bug. Checked real cached position data before "
+                       "touching code: 663 real issuer names with clean "
+                       "'&', and dozens leaked as '&amp;' — 'JPMORGAN CHASE "
+                       "&amp; CO.', 'SPDR S&amp;P 500 ETF TR', 'PG&amp;E "
+                       "CORP' — in the actual WHALE MOVES panel data. Fixed "
+                       "at the root and de-duplicated per convention #1 "
+                       "(two telescopes needing the same helper belongs in "
+                       "the kernel): lifted xml_tag() into telescope/"
+                       "http.py, the natural home next to try_text()'s "
+                       "existing 'SEC's XML' framing, and removed both "
+                       "telescopes' private copies in favor of it. "
+                       "Verified live: cleared the stale cached 13f_pos_*."
+                       "json files, forced a real Simons sweep, and "
+                       "confirmed 0 leaks across 663 real re-fetched names. "
+                       "Extending the new fleet-wide entity-leak test (from "
+                       "the item above) to also check panel rows caught a "
+                       "second, genuine bug in the test itself: it checked "
+                       "a hardcoded 'name' field, but WHALE MOVES' actual "
+                       "free-text fields are 'fund'/'security' — the panel "
+                       "check was silently vacuous (every row's r.get"
+                       "('name') was None, so the assertion always trivially "
+                       "passed) until rewritten to check every fmt=\"text\" "
+                       "column a panel actually declares. Confirmed the "
+                       "corrected test genuinely exercises real fund/"
+                       "security values before trusting the green result, "
+                       "not just assuming the fix worked because the suite "
+                       "passed"},
         ],
     },
 ]
