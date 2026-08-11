@@ -297,6 +297,40 @@ def test_api_toggle_flips_real_state_and_is_reflected_by_the_registry(client):
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def test_api_telescope_disabled_slug_is_409(client):
+    """_resolve()'s disabled branch -- every single per-telescope route goes
+    through _resolve(), but this branch (as opposed to the unknown-slug 404
+    one) had no test at all. Same STATE_FILE redirection as the toggle test
+    above, since disabling a real telescope here would otherwise flip the
+    same data/observatory.json the real dev server reads."""
+    tmp_dir = tempfile.mkdtemp()
+    orig_state_file = registry.STATE_FILE
+    registry.STATE_FILE = os.path.join(tmp_dir, "observatory.json")
+    try:
+        registry.set_enabled("hubble", False)
+        resp = client.get("/api/telescope/hubble")
+        assert resp.status_code == 409
+        data = resp.get_json()
+        assert data["disabled"] is True
+    finally:
+        registry.STATE_FILE = orig_state_file
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def test_parse_weights_handles_the_full_shape_space():
+    """The weights= query string is user-typed, and before this was only
+    ever exercised indirectly by real API calls with well-formed input --
+    its own edge cases (malformed pairs, non-numeric values, all-garbage
+    input) had no direct coverage."""
+    parse = flask_app._parse_weights
+    assert parse(None) is None
+    assert parse("") is None
+    assert parse("a:10,b:20") == {"a": 10.0, "b": 20.0}
+    assert parse(" a : 10 , b:not-a-number ") == {"a": 10.0}
+    assert parse("garbage,no,colons") is None
+    assert parse("a:10,garbage,b:20") == {"a": 10.0, "b": 20.0}
+
+
 def test_api_brief_send_dispatches_without_error(client):
     """No OBSERVATORY_DISCORD_WEBHOOK/OBSERVATORY_SLACK_WEBHOOK/X_API_KEY
     are set in this environment (confirmed live before writing this test),

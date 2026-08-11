@@ -1324,6 +1324,25 @@ PHASES = [
                        "(all confirmed empty first) — data/ is gitignored "
                        "so this was never in the repo, but the local "
                        "hygiene was worth fixing alongside the root cause"},
+            {"name": "Test coverage for _resolve()'s disabled branch and "
+                     "_parse_weights()", "done": True,
+             "detail": "audited app.py's route-adjacent helpers the same "
+                       "way telescope/base.py and telescope/snapshots.py "
+                       "were audited the last two iterations, and found two "
+                       "more real gaps: _resolve()'s 409-disabled branch — "
+                       "every single per-telescope route goes through it, "
+                       "but only its 404-unknown-slug sibling had ever been "
+                       "tested — and _parse_weights(), the weights= query-"
+                       "string parser, which had only ever been exercised "
+                       "indirectly by real API calls using well-formed "
+                       "input, never on its own malformed/non-numeric/all-"
+                       "garbage edge cases. The disabled-branch test uses "
+                       "the same registry.STATE_FILE temp-dir redirection "
+                       "as the toggle test two iterations ago, so disabling "
+                       "a real telescope for the test can't touch the same "
+                       "data/observatory.json the real dev server reads — "
+                       "confirmed after running it that the real file was "
+                       "untouched"},
         ],
     },
 ]
