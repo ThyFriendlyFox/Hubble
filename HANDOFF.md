@@ -8,7 +8,7 @@ system is), `TELESCOPES.md` (why the pattern is shaped this way) and
 
 Six telescopes run on live public data, no API keys. Kernel in `telescope/`,
 one domain pack per telescope in `observatories/`, one generic frontend driven
-entirely by telescope metadata. 118 kernel tests + 46 domain-pack tests +
+entirely by telescope metadata. 118 kernel tests + 66 domain-pack tests +
 92 live tests (all three suites grow as the build continues — check the
 actual count with `-q`, don't trust this number for long).
 
@@ -60,8 +60,15 @@ panel's `new_program`/`budget_shift` event logic (`_psc_events()`) and its
 own `sweep()` override had never been exercised by either suite at all —
 not cache-skipped, genuinely never called — including the "compare
 against the last announcement, not the last sweep" baseline-drift property
-the module docstring calls out. `roadmap.py`'s own Phase 5 entries are the
-detailed log — this is only the shape of it.
+the module docstring calls out. Holmdel closed next, and cleanly this
+time — 67% -> 100%, the first domain pack in the sweep with no remaining
+gap at all: per-source extraction logic (arXiv's regex XML parsing, HN/
+Wiki/GitHub's window extraction, npm's stale-data-over-a-total-outage
+resilience) plus the UNLISTED panel's watchlist matching and `context()`'s
+FIELDS aggregation, including one honestly-documented real quirk — an
+all-noise sweep skips the independently-sourced UNLISTED panel too, since
+both sit behind the same early return. `roadmap.py`'s own Phase 5 entries
+are the detailed log — this is only the shape of it.
 
 Work is on branch `claude/telescope-dashboard-concept-lo1ay8`, open as **PR #1**.
 Pushing to that branch updates the PR — do not open a new one.

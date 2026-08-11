@@ -21,7 +21,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import shutil                                                     # noqa: E402
 from unittest.mock import patch                                  # noqa: E402
 
-from observatories import jackson, kepler                        # noqa: E402
+from observatories import holmdel, jackson, kepler                # noqa: E402
+from observatories.holmdel import Holmdel, Topic, _growth         # noqa: E402
 from observatories.jackson import Jackson                         # noqa: E402
 from observatories.kepler import (Kepler, _core_name,             # noqa: E402
                                   _distinctive_enough,
@@ -744,5 +745,301 @@ def test_unmapped_panel_surfaces_a_defense_relevant_kepler_row():
         assert panel is not None
         assert len(panel["rows"]) == 1
         assert panel["rows"][0]["name"] == "Anduril Aerospace Systems"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# HOLMDEL
+# ═══════════════════════════════════════════════════════════════════════
+def _isolated_holmdel():
+    hol = Holmdel()
+    tmp = tempfile.mkdtemp()
+    hol.cache.dir = tmp
+    return hol, tmp
+
+
+# ── _growth(): the shared velocity-percentage math ───────────────────────
+def test_growth_returns_none_when_either_side_is_missing():
+    assert _growth(None, 10) is None
+    assert _growth(10, None) is None
+
+
+def test_growth_returns_none_below_the_volume_floor():
+    """1 -> 6 stories is +500% and would top any board -- one slow news
+    week, not a real trend. Below the combined-observations floor, no
+    growth signal is reported at all."""
+    assert _growth(3, 2, floor=10) is None   # combined 5 < floor 10
+
+
+def test_growth_handles_a_zero_prior_without_dividing_by_zero():
+    assert _growth(5, 0, floor=0) == 100.0
+    assert _growth(0, 0, floor=0) == 0.0
+
+
+def test_growth_computes_a_real_percentage():
+    assert _growth(150, 100, floor=0) == 50.0
+    assert _growth(50, 100, floor=0) == -50.0
+
+
+# ── _hn(): story count, peak score, two adjacent windows ─────────────────
+def test_hn_extracts_recent_and_prior_counts_and_peak_points():
+    t = Topic("t1", "Topic One", "AI", "topic one query")
+    responses = [
+        {"nbHits": 20, "hits": [{"points": 50}, {"points": 90}]},   # recent window
+        {"nbHits": 8, "hits": [{"points": 10}]},                     # prior window
+    ]
+    hol, tmp = _isolated_holmdel()
+    try:
+        with patch.object(holmdel, "TOPICS", (t,)), \
+             patch.object(holmdel, "try_json", side_effect=responses), \
+             patch("time.sleep"):
+            out = hol._hn(3600)
+        assert out == {"t1": {"recent": 20, "prior": 8, "points": 90}}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── _wiki(): pageviews, only for topics with a real article title ───────
+def test_wiki_skips_topics_without_an_article_title():
+    calls = []
+
+    def fake_try_json(url, default=None):
+        calls.append(url)
+        return default
+
+    t = Topic("t1", "No Wiki", "AI", "query one")   # wiki="" by default
+    hol, tmp = _isolated_holmdel()
+    try:
+        with patch.object(holmdel, "TOPICS", (t,)), \
+             patch.object(holmdel, "try_json", side_effect=fake_try_json), \
+             patch("time.sleep"):
+            out = hol._wiki(3600)
+        assert out == {}
+        assert calls == []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_wiki_sums_daily_views_across_the_window():
+    t = Topic("t1", "Has Wiki", "AI", "query one", wiki="Some_Article")
+    responses = [
+        {"items": [{"views": 100}, {"views": 200}]},   # recent
+        {"items": [{"views": 50}]},                      # prior
+    ]
+    hol, tmp = _isolated_holmdel()
+    try:
+        with patch.object(holmdel, "TOPICS", (t,)), \
+             patch.object(holmdel, "try_json", side_effect=responses), \
+             patch("time.sleep"):
+            out = hol._wiki(3600)
+        assert out == {"t1": {"recent": 300, "prior": 50}}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_wiki_a_renamed_or_missing_article_returns_none_not_a_crash():
+    t = Topic("t1", "Has Wiki", "AI", "query one", wiki="Renamed_Article")
+    hol, tmp = _isolated_holmdel()
+    try:
+        with patch.object(holmdel, "TOPICS", (t,)), \
+             patch.object(holmdel, "try_json", return_value=None), \
+             patch("time.sleep"):
+            out = hol._wiki(3600)
+        assert out == {"t1": {"recent": None, "prior": None}}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── _arxiv(): quoted-phrase totals via regex, and the rotation guarantee ─
+def test_arxiv_extracts_total_from_valid_opensearch_xml():
+    t = Topic("t1", "Topic One", "AI", "query one")
+    xml = "<feed><opensearch:totalResults>1234</opensearch:totalResults></feed>"
+    hol, tmp = _isolated_holmdel()
+    try:
+        with patch.object(holmdel, "TOPICS", (t,)), \
+             patch.object(holmdel, "try_text", return_value=xml), \
+             patch("time.sleep"):
+            out = hol._arxiv(3600)
+        assert out == {"t1": {"recent": 1234, "prior": 1234}}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_arxiv_returns_none_for_malformed_or_missing_xml():
+    t = Topic("t1", "Topic One", "AI", "query one")
+    hol, tmp = _isolated_holmdel()
+    try:
+        with patch.object(holmdel, "TOPICS", (t,)), \
+             patch.object(holmdel, "try_text", return_value="<not-the-right-tag/>"), \
+             patch("time.sleep"):
+            out = hol._arxiv(3600)
+        assert out == {"t1": {"recent": None, "prior": None}}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_arxiv_processes_every_topic_regardless_of_rotation_offset():
+    """Topics are rotated by day-of-year so the throttle doesn't always cut
+    off the same ones -- but regardless of where the rotation starts, every
+    topic must still end up with an entry in the output."""
+    topics = tuple(Topic(f"t{i}", f"Topic {i}", "AI", f"query {i}") for i in range(5))
+    hol, tmp = _isolated_holmdel()
+    try:
+        with patch.object(holmdel, "TOPICS", topics), \
+             patch.object(holmdel, "try_text",
+                          return_value="<opensearch:totalResults>1</opensearch:totalResults>"), \
+             patch("time.sleep"):
+            out = hol._arxiv(3600)
+        assert set(out.keys()) == {t.key for t in topics}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── _github(): repo velocity + peak stars from the recent window only ───
+def test_github_extracts_repo_count_and_peak_stars_from_recent_window_only():
+    t = Topic("t1", "Topic One", "COMPUTE", "topic one query")
+    responses = [
+        {"total_count": 42, "items": [{"stargazers_count": 100}, {"stargazers_count": 250}]},
+        {"total_count": 10, "items": [{"stargazers_count": 999}]},   # prior -- stars discarded
+    ]
+    hol, tmp = _isolated_holmdel()
+    try:
+        with patch.object(holmdel, "TOPICS", (t,)), \
+             patch.object(holmdel, "try_json", side_effect=responses), \
+             patch("time.sleep"):
+            out = hol._github(3600)
+        assert out == {"t1": {"recent": 42, "prior": 10, "stars": 250}}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── _npm(): the one source with per-topic optionality by design ─────────
+def test_npm_skips_topics_without_a_canonical_package():
+    calls = []
+
+    def fake_try_json(url, default=None):
+        calls.append(url)
+        return default
+
+    t = Topic("t1", "No NPM", "AI", "query one")   # npm="" by default
+    hol, tmp = _isolated_holmdel()
+    try:
+        with patch.object(holmdel, "TOPICS", (t,)), \
+             patch.object(holmdel, "try_json", side_effect=fake_try_json), \
+             patch("time.sleep"):
+            out = hol._npm(3600)
+        assert out == {}
+        assert calls == []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_npm_records_a_real_download_count():
+    t = Topic("t1", "Has NPM", "AI", "query one", npm="somepkg")
+    hol, tmp = _isolated_holmdel()
+    try:
+        with patch.object(holmdel, "TOPICS", (t,)), \
+             patch.object(holmdel, "try_json", return_value={"downloads": 12345}), \
+             patch("time.sleep"):
+            out = hol._npm(3600)
+        assert out == {"t1": 12345}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_npm_preserves_stale_data_over_a_total_outage():
+    t = Topic("t1", "Has NPM", "AI", "query one", npm="somepkg")
+    hol, tmp = _isolated_holmdel()
+    try:
+        with patch.object(holmdel, "TOPICS", (t,)), \
+             patch.object(holmdel, "try_json", return_value={"downloads": 500}), \
+             patch("time.sleep"):
+            first = hol._npm(3600)
+        assert first == {"t1": 500}
+        # Total outage: every request fails and try_json degrades to None.
+        with patch.object(holmdel, "TOPICS", (t,)), \
+             patch.object(holmdel, "try_json", return_value=None), \
+             patch("time.sleep"):
+            second = hol._npm(0)   # ttl=0 forces a real miss, not a cache hit
+        assert second == {"t1": 500}   # stale-but-real value preserved
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── _unlisted_panel(): trending HN stories outside the curated watchlist ─
+def test_unlisted_panel_is_none_when_no_hn_hits_at_all():
+    hol, tmp = _isolated_holmdel()
+    try:
+        with patch.object(holmdel, "try_json", return_value={"hits": []}):
+            assert hol._unlisted_panel(force=True) is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_unlisted_panel_is_none_when_every_hit_matches_the_watchlist():
+    hol, tmp = _isolated_holmdel()
+    hits = {"hits": [{"title": "New AI Agents breakthrough", "points": 200,
+                       "num_comments": 10, "objectID": "1"}]}
+    try:
+        # The real watchlist includes an "AI agents" query -- this title
+        # matches it, so it must not appear as "unlisted".
+        with patch.object(holmdel, "try_json", return_value=hits):
+            assert hol._unlisted_panel(force=True) is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_unlisted_panel_surfaces_a_real_unlisted_story_sorted_by_points():
+    hol, tmp = _isolated_holmdel()
+    hits = {"hits": [
+        {"title": "Something totally unrelated to any topic", "points": 90,
+         "num_comments": 5, "objectID": "1"},
+        {"title": "An even bigger unrelated story", "points": 300,
+         "num_comments": 40, "objectID": "2"},
+    ]}
+    try:
+        with patch.object(holmdel, "try_json", return_value=hits):
+            panel = hol._unlisted_panel(force=True)
+        assert panel is not None
+        assert [r["points"] for r in panel["rows"]] == [300, 90]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── context(): FIELDS aggregation, noise-skipping and the empty case ────
+def test_context_skips_noise_rows_when_aggregating_by_field():
+    hol, tmp = _isolated_holmdel()
+    rows = [
+        {"noise": True, "group": "AI", "hn_growth": 999, "wiki_growth": 999},
+        {"noise": False, "group": "AI", "hn_growth": 20.0, "wiki_growth": 10.0},
+    ]
+    try:
+        with patch.object(hol, "collect", return_value=rows), \
+             patch.object(hol, "_unlisted_panel", return_value=None):
+            panels = hol.context(force=True)
+        fields_panel = panels[0]
+        assert fields_panel["rows"][0]["topics"] == 1   # only the non-noise row counted
+        assert fields_panel["rows"][0]["hn_growth"] == 20.0
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_context_is_none_when_every_topic_is_currently_noise():
+    """An extreme edge case -- every one of Holmdel's 6 independent sources
+    reporting nothing for every topic at once -- but this documents the
+    real, current behaviour: the early return also skips calling the
+    independently-sourced UNLISTED panel this sweep, even though it
+    doesn't depend on the FIELDS aggregation at all."""
+    hol, tmp = _isolated_holmdel()
+    rows = [{"noise": True, "group": "AI", "hn_growth": None, "wiki_growth": None}]
+    calls = []
+    try:
+        with patch.object(hol, "collect", return_value=rows), \
+             patch.object(hol, "_unlisted_panel",
+                          side_effect=lambda force: calls.append(force)):
+            panels = hol.context(force=True)
+        assert panels is None
+        assert calls == []   # _unlisted_panel never even got called
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
