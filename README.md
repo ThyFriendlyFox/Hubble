@@ -39,7 +39,10 @@ laptop or light the whole observatory on a server. Toggle state persists to
   against benchmarks, arena Elo, popularity and price.
 - **Jackson** — where defense money is *moving*, not just who is big. Ranks
   primes on trailing-12-month obligations against the prior 12 months, with a
-  capability-area panel showing which mission areas are growing.
+  capability-area panel showing which mission areas are growing. A
+  substantial move there — a real budget line appearing or an existing one
+  shifting ±30%/$50M+ — fires a `NEW PROGRAM`/`BUDGET SHIFT` feed event too,
+  not just a passive panel entry.
 - **Simons** — deliberately **not** a levels dashboard. It ranks indicators by
   how far each is reading from its own trailing normal (z-score, range
   extremity, vol expansion), so the board answers "what should I look at today"

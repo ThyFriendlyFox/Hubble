@@ -17,9 +17,18 @@ Sources (all public, no keys):
 
 Latency note: USAspending lags actual award announcements by days to weeks, so
 Jackson is a "where has the money moved" instrument, not a newswire.
+
+A substantial move on the CAPABILITY AREAS panel — a real budget line
+appearing (`new_program`) or an existing one's trailing-12m obligations
+moving ±30%/$50M+ (`budget_shift`, the same bar the main board's own
+big_award/funding_drop use) — fires a real feed event, not just a passive
+panel entry. Persisted per PSC code against the last-announced amount, not
+the last sweep, so slow drift across many sweeps still eventually crosses
+the threshold instead of never re-basing.
 """
 import datetime as dt
 import re
+import time
 import traceback
 
 from telescope import Column, Signal, Telescope, ranking
@@ -114,6 +123,10 @@ PSC_SIGNALS = (
     Signal("momentum", "growth_pct", "MOMENTUM"),
 )
 PSC_WEIGHTS = {"scale": 50, "momentum": 50}
+# Matches the main board's own big_award/funding_drop DeltaRule bar (30%,
+# $50M) -- "substantial move" shouldn't mean something different here.
+PSC_EVENT_MIN_GROWTH_PCT = 30.0
+PSC_EVENT_MIN_AMOUNT = 50e6
 
 
 def _category(category, start, end, limit=100):
@@ -450,6 +463,83 @@ class Jackson(Telescope):
             ],
             "rows": rows,
         }
+
+    def _psc_events(self, rows):
+        """Turn the CAPABILITY AREAS panel's real, already-computed growth
+        into feed events -- TELESCOPES.md's own design named `new_program`
+        (a budget line appears) and `budget_shift` (a program's obligations
+        move ±X% YoY) as first-class Jackson events, alongside the ones the
+        main board already fires; only the main board ever actually fired
+        anything, the same passive-panel gap Simons' WHALE MOVES had before
+        being fixed two iterations ago.
+
+        Panel rows are a continuously-drifting rolling-12-month window
+        recomputed fresh every sweep, not the same discrete-snapshot shape
+        record()'s diff engine expects, so persistence here is a small
+        cache-tracked "amount last announced per PSC code" -- comparing
+        against the last ANNOUNCEMENT rather than the last sweep, so slow
+        cumulative drift across many sweeps still eventually crosses the
+        threshold instead of never re-basing. Same reasoning Simons' whale-
+        move events used for its own differently-shaped 13F data.
+
+        30%/$50M matches the main board's own big_award/funding_drop
+        DeltaRule bar -- no reason a "substantial move" means something
+        different on this panel than it does on the board.
+        """
+        if not rows:
+            return []
+        last = self.cache.get("psc_events_seen", 10 ** 9) or {}
+        new_last = dict(last)
+        ts = time.time()
+        events = []
+        for r in rows:
+            code, amount = r.get("code"), r.get("amount") or 0.0
+            if not code or amount < PSC_EVENT_MIN_AMOUNT:
+                continue
+            if code not in last:
+                new_last[code] = amount
+                if r.get("growth_pct") is None:
+                    # Not just missing a prior reading -- _psc_prior() casts
+                    # a wide net (top 60 vs. this panel's top 25), so this
+                    # code genuinely wasn't a major spend category a year
+                    # ago and is now, a real "budget line appeared".
+                    events.append({
+                        "type": "new_program", "key": code, "name": r["name"],
+                        "ts": ts, "telescope": self.slug,
+                        "headline": (f"🛡 New capability area on the board — "
+                                     f"{r['name']} at {money(amount)} "
+                                     "trailing 12m, nothing comparable a "
+                                     "year ago."),
+                    })
+                continue
+            prior = last[code]
+            pct = (amount - prior) / prior * 100 if prior else None
+            if pct is None or abs(pct) < PSC_EVENT_MIN_GROWTH_PCT:
+                continue
+            new_last[code] = amount
+            verb = "surged" if pct > 0 else "fell"
+            events.append({
+                "type": "budget_shift", "key": code, "name": r["name"],
+                "ts": ts, "telescope": self.slug,
+                "headline": (f"🛡 {r['name']} obligations {verb} "
+                             f"{abs(pct):.0f}% — {money(prior)} → "
+                             f"{money(amount)} trailing 12m."),
+            })
+        self.cache.set("psc_events_seen", new_last)
+        return events
+
+    def sweep(self, notifier=None):
+        """Adds CAPABILITY AREAS panel events on top of the normal board
+        sweep -- see _psc_events()'s docstring for why they're detected and
+        dispatched here rather than through record()'s diff() machinery."""
+        events = super().sweep(notifier)
+        psc = self._psc_panel(force=False)
+        psc_events = self._psc_events(psc["rows"] if psc else [])
+        if psc_events:
+            self.store.append_events(psc_events)
+            if notifier:
+                notifier.dispatch(psc_events, self)
+        return events + psc_events
 
     def _unmapped_panel(self):
         """Defense-relevant Form D filings from Kepler's stealth-raise feed.

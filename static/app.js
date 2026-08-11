@@ -644,7 +644,8 @@ const ETYPE_LABEL = {
   breakout: "BREAKOUT", crossing_over: "CROSSOVER", rate_spike: "RATE SPIKE",
   rate_drop: "RATE DROP", congestion: "CONGESTION",
   hiring_surge: "HIRING", stealth_graduated: "GRADUATED",
-  whale_move: "WHALE MOVE",
+  whale_move: "WHALE MOVE", new_program: "NEW PROGRAM",
+  budget_shift: "BUDGET SHIFT",
 };
 
 let feedEvents = [];

@@ -13,6 +13,7 @@ import requests
 SOCIAL_TYPES = {
     "new_leader", "new_model", "new_entrant", "stealth_raise",
     "faint_signal", "regime_change", "big_award", "whale_move",
+    "new_program", "budget_shift",
 }
 
 
