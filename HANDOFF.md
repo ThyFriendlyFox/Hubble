@@ -11,8 +11,9 @@ Six telescopes (Hubble, Jackson, Simons, Kepler, Holmdel, Reddington) run on
 live public data, no API keys. Kernel in `telescope/`, one domain pack per
 telescope in `observatories/`, one generic frontend driven entirely by
 telescope metadata. 119 kernel tests + 101 domain-pack tests + 92 live tests
-+ 15 zero-dependency Node tests over app.js's formatters (check the actual
-counts with `-q` / `node --test`, don't trust these numbers for long).
++ 22 zero-dependency Node tests over app.js's formatters, panel sort and
+tooltip logic (check the actual counts with `-q` / `node --test`, don't
+trust these numbers for long).
 
 Every Phase 0–4 roadmap item (the six telescopes and their core signals) is
 shipped. Phase 5 (hardening) closed out a long tail of real bugs found by
@@ -114,14 +115,22 @@ re-checking, a section of the app never yet touched):
 4. **Re-probe blocked sources for a real change.** Ongoing, every
    iteration, via the table above — cheap and already part of the loop.
 
-`static/app.js`'s pure formatting helpers (esc/fmtNum/fmtInt/fmtMoney/
-fmtPrice/fmtPct/fmtSigned/fmtText/fmtUrl/cell/ago) now have real coverage —
-`tests_js/`, using Node's built-in `node:test`/`node:vm` (already on the
-machine, zero npm install, zero package.json) to sandbox-extract the actual
-functions out of the shipped file rather than a hand-copied duplicate. The
-rest of app.js (rendering, event wiring, the fetch/localStorage-touching
-code) still has none, and would need a real DOM shim (jsdom or similar) to
-test — that's still the dependency-adding decision this loop shouldn't make
+`static/app.js`'s pure/DOM-free logic now has real coverage — `tests_js/`,
+using Node's built-in `node:test`/`node:vm` (already on the machine, zero
+npm install, zero package.json) to sandbox-extract the actual functions out
+of the shipped file rather than a hand-copied duplicate. Covers the format
+helpers (esc/fmtNum/fmtInt/fmtMoney/fmtPrice/fmtPct/fmtSigned/fmtText/
+fmtUrl/cell/ago), the panel sort comparator (sortPanelRows), and the
+score-breakdown tooltip builder (buildTip/fmtRaw, extracted alongside the
+real mutable `state` object rather than a stand-in shape). Note for anyone
+extending this further: an array returned from code run inside a vm context
+belongs to that context's own realm, so `assert.deepEqual`/`deepStrictEqual`
+will reject it against a same-realm array literal even when every element
+matches — read values out with `Array.from(x, mapper)` from the test's own
+realm first (see tests_js/panel_and_tip.test.js's comment). The rest of
+app.js (DOM rendering, event wiring, the fetch/localStorage-touching code)
+still has none, and would need a real DOM shim (jsdom or similar) to test —
+that's still the dependency-adding decision this loop shouldn't make
 unilaterally, so if `tests_js/` is ever not enough, surface that as an
 option rather than starting it.
 
