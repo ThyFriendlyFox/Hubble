@@ -114,9 +114,21 @@ main { position: relative; z-index: 1; max-width: 1480px; margin: 0 auto; paddin
 #fit-table td.name a { color: var(--ink); text-decoration: none; }
 #fit-table td.name a:hover { text-decoration: underline; }
 .actions { display: flex; align-items: center; gap: 18px; }
+/* Capped, not just nowrap: found live -- Holmdel's own per-source freshness
+   readout (7 sources: "ARXIV 20m · GITHUB 16m · HN 28m · HN_UNLISTED 36m ·
+   NPM 27m · OPENALEX 32h · WIKIPEDIA 27m") is long enough that, sharing
+   .topbar's width against nowrap text with no cap, it squeezed .tabs down
+   to wrapping even at full 1280px desktop width -- not a viewport-size
+   bug like .tabs' own narrow-viewport fix above, but the same underlying
+   shape: an unbounded-width sibling starving the real navigation of room.
+   Every other telescope's shorter readout fits the cap untruncated; only
+   ones with many sources lose their tail to the ellipsis, which is the
+   right tradeoff -- secondary diagnostic text conceding space to primary
+   navigation, not the other way around. */
 .readout {
   color: var(--ink-dim); font-size: 10px; letter-spacing: 1px;
   border: 1px solid var(--line); padding: 6px 10px; white-space: nowrap;
+  max-width: 420px; overflow: hidden; text-overflow: ellipsis;
 }
 
 /* ── buttons ──────────────────────────────── */

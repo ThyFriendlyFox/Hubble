@@ -32,11 +32,16 @@ Phase 7 drove the actual running dashboard in a real browser — the first
 iterations in this build to do that rather than only read or test the code —
 covering all six telescopes' boards and every major interactive control
 (weight sliders, SAVE VIEW's full apply/delete/create lifecycle, the
-enable/disable toggle, narrow-viewport layout). It found and fixed a second
-real concurrency bug along the way: `Cache.cached()` had no protection
-against a cache stampede (concurrent cold-cache callers each redundantly
-re-running the same slow fetch instead of one paying the cost and the rest
-waiting), fixed with a per-instance lock.
+enable/disable toggle, narrow-viewport layout, column sorting, the per-row
+watch star). It found and fixed two real bugs along the way: a `Cache.
+cached()` cache-stampede race (concurrent cold-cache callers each
+redundantly re-running the same slow fetch instead of one paying the cost
+and the rest waiting, fixed with a per-instance lock), and a header layout
+bug where a telescope with many sources (Holmdel, 7) could squeeze the nav
+tabs into wrapping even at full desktop width because its own freshness
+readout had no width cap (fixed by capping `.readout` with ellipsis
+truncation, so secondary diagnostic text concedes space to primary
+navigation).
 
 **All of this is exhaustively detailed in `roadmap.py`** (and its generated
 form, `ROADMAP.md` / the dashboard's ROADMAP tab) — this section is only the
@@ -95,10 +100,11 @@ re-checking, a section of the app never yet touched):
    docstring. `ROADMAP.md` is generated so it can't drift; `app.js`/
    `style.css`/`index.html` have no prose docs to drift from.
 3. **Drive the dashboard in a real browser.** Done for all six telescopes'
-   boards and every major interactive control. This is the avenue that's
-   found real bugs *twice* (both fixed) — it's the one most likely to still
-   have something if a genuinely new angle presents itself (a control or
-   flow not yet exercised, behavior after new code lands).
+   boards and every major interactive control, including column sorting and
+   the per-row watch star (the two most recently added). This is the avenue
+   that's found real bugs *three times* now (all fixed) — still the one
+   most likely to have something if a genuinely new angle presents itself
+   (a control or flow not yet exercised, behavior after new code lands).
 4. **Re-probe blocked sources for a real change.** Ongoing, every
    iteration, via the table above — cheap and already part of the loop.
 
