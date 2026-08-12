@@ -3111,6 +3111,82 @@ PHASES = [
                        "green) rather than a live-suite rerun"},
         ],
     },
+    {
+        "title": "PHASE 8 · FRONTEND UNIT TESTS",
+        "status": "next",
+        "note": "The one gap every Phase 7 iteration flagged but "
+                "deliberately didn't act on: static/app.js (826 lines) had "
+                "zero automated coverage of any kind, and HANDOFF.md was "
+                "explicit that pulling in a real JS test framework (Jest, "
+                "jsdom, a package.json, an npm install step) was a bigger, "
+                "dependency-adding decision than a single unattended "
+                "iteration should make unilaterally. This phase resolves "
+                "that without making the decision HANDOFF flagged: Node 22 "
+                "is already on the machine, and its built-in node:test / "
+                "node:assert / node:vm modules need zero npm install, zero "
+                "package.json, and zero new files shipped to the browser -- "
+                "so it adds coverage without adding a dependency.",
+        "items": [
+            {"name": "Added tests_js/, a zero-dependency Node test suite "
+                     "for app.js's pure formatting helpers, using node:vm "
+                     "to sandbox-extract the real functions straight out "
+                     "of the shipped file rather than a hand-copied "
+                     "duplicate that could drift out of sync",
+             "done": True,
+             "detail": "tests_js/extract.js reads static/app.js's actual "
+                       "source text and pulls out esc/fmtNum/fmtInt/"
+                       "fmtMoney/fmtPrice/fmtPct/fmtSigned/fmtText/fmtUrl/"
+                       "FORMATTERS/cell/ago by name, using a brace-depth "
+                       "counter (not a regex, so it doesn't silently "
+                       "mis-extract if a function later grows an internal "
+                       "block) to find each one's exact boundaries, then "
+                       "evaluates the extracted text in a fresh vm context "
+                       "and hands back the resulting functions. These "
+                       "eleven names were picked because they're genuinely "
+                       "pure -- no document/localStorage/fetch access -- "
+                       "so they're sandboxable with zero DOM stubbing, "
+                       "unlike the rest of app.js which assumes a live "
+                       "browser throughout (event listeners registered at "
+                       "module load, an immediately-invoked boot() that "
+                       "fetches from the real API) and would need a much "
+                       "heavier harness (jsdom or similar) to load at all "
+                       "-- exactly the dependency HANDOFF.md was right to "
+                       "avoid deciding on unilaterally. tests_js/format_"
+                       "helpers.test.js then pins real behavior with "
+                       "node:assert, run via `node --test tests_js/*.test."
+                       "js`: HTML-escaping correctness in esc() (every "
+                       "significant character, plus null/undefined "
+                       "treated as empty rather than stringified to "
+                       "'null'); fmtInt/fmtMoney's K/M/B magnitude ladder "
+                       "at the exact 1e3/1e6/1e9 boundaries, including "
+                       "that 999999 renders '1000.0K' rather than rolling "
+                       "over early, and that negative numbers keep their "
+                       "sign through the branch; fmtSigned's three-way "
+                       "up/down/neutral class selection and that only the "
+                       "positive case gets an explicit '+'; fmtUrl's "
+                       "escaping applied to both the href and the visible "
+                       "text; and cell()'s dispatch-by-col.fmt-with-"
+                       "fallback-to-fmtNum. Two genuine, previously-"
+                       "undocumented quirks came out of writing these: "
+                       "ago() rounds up to '60m' and '24h' without ever "
+                       "rolling over to the next unit right at the top of "
+                       "each range (3599s shows '60m', not '1h'), and "
+                       "ago() returns a bare em dash for null while every "
+                       "other formatter here returns the dim-span version "
+                       "-- not asserted as bugs (nothing in HANDOFF's "
+                       "conventions says formatter null-handling must be "
+                       "visually identical), just pinned as the real "
+                       "current behavior, which is what a first pass of "
+                       "tests over undocumented legacy-by-omission code is "
+                       "supposed to do. All 15 tests pass against the real "
+                       "shipped file on the first run. Zero npm "
+                       "dependencies, zero package.json, app.js itself "
+                       "untouched -- HANDOFF.md's bash block and Start-"
+                       "here section updated to include `node --test "
+                       "tests_js/*.test.js` as a third, independent test "
+                       "command alongside the two Python suites"},
+        ],
+    },
 ]
 
 

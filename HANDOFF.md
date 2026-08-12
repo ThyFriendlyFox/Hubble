@@ -11,7 +11,8 @@ Six telescopes (Hubble, Jackson, Simons, Kepler, Holmdel, Reddington) run on
 live public data, no API keys. Kernel in `telescope/`, one domain pack per
 telescope in `observatories/`, one generic frontend driven entirely by
 telescope metadata. 119 kernel tests + 101 domain-pack tests + 92 live tests
-(check the actual count with `-q`, don't trust this number for long).
++ 15 zero-dependency Node tests over app.js's formatters (check the actual
+counts with `-q` / `node --test`, don't trust these numbers for long).
 
 Every Phase 0–4 roadmap item (the six telescopes and their core signals) is
 shipped. Phase 5 (hardening) closed out a long tail of real bugs found by
@@ -62,6 +63,7 @@ OBSERVATORY_ENABLED=all python app.py            # http://127.0.0.1:5000
 python -m pytest tests/test_kernel.py -q         # kernel pure logic, fast
 python -m pytest tests/test_observatories.py -q  # domain-pack logic, mocked network, fast
 python -m pytest tests/test_live.py -q           # hits real sources, slow when cold
+node --test tests_js/*.test.js                   # app.js's pure formatters, zero npm deps
 ```
 
 ## Start here: re-probe what's still blocked, then read the roadmap
@@ -112,10 +114,16 @@ re-checking, a section of the app never yet touched):
 4. **Re-probe blocked sources for a real change.** Ongoing, every
    iteration, via the table above — cheap and already part of the loop.
 
-If none of these turn up anything, `static/app.js` (826 lines) still has no
-*automated* test coverage of any kind — introducing a formal JS test
-framework is a bigger, dependency-adding decision than a single iteration
-should make unilaterally, so surface it as an option rather than starting it.
+`static/app.js`'s pure formatting helpers (esc/fmtNum/fmtInt/fmtMoney/
+fmtPrice/fmtPct/fmtSigned/fmtText/fmtUrl/cell/ago) now have real coverage —
+`tests_js/`, using Node's built-in `node:test`/`node:vm` (already on the
+machine, zero npm install, zero package.json) to sandbox-extract the actual
+functions out of the shipped file rather than a hand-copied duplicate. The
+rest of app.js (rendering, event wiring, the fetch/localStorage-touching
+code) still has none, and would need a real DOM shim (jsdom or similar) to
+test — that's still the dependency-adding decision this loop shouldn't make
+unilaterally, so if `tests_js/` is ever not enough, surface that as an
+option rather than starting it.
 
 ## Then work the roadmap
 
