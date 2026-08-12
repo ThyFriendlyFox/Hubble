@@ -461,6 +461,55 @@ def test_cache_cached_prevents_a_stampede_on_a_cold_cache():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_cache_cached_does_not_block_a_different_key_behind_a_slow_one():
+    """Found live, not in a test, the same day as the stampede fix above
+    started causing a *new* problem of its own: the stampede fix's lock is
+    whole-instance, so a single slow key (Holmdel's OpenAlex source hanging
+    for 90+ seconds mid-outage rather than failing fast) blocked reads of
+    every *other* key in the same telescope too -- even ones with a
+    perfectly fresh cache hit that needs no network call at all. A real
+    board load hung waiting on data it didn't even need. Cache.cached()
+    must lock per key, not per instance: a slow producer on one key must
+    never make a cache hit on a different key wait."""
+    tmp = tempfile.mkdtemp()
+    try:
+        cache = Cache("test_ns")
+        cache.dir = tmp
+        cache.set("fast", {"v": "cached"})  # a real, fresh hit -- no producer call needed
+
+        slow_started = threading.Event()
+        release_slow = threading.Event()
+
+        def slow_producer():
+            slow_started.set()
+            release_slow.wait(timeout=5)
+            return {"v": "slow"}
+
+        slow_thread = threading.Thread(
+            target=lambda: cache.cached("slow", 3600, slow_producer)
+        )
+        slow_thread.start()
+        assert slow_started.wait(timeout=2), "slow producer never started"
+
+        # While "slow" is still stuck inside its producer, a fast key's
+        # cache hit must return immediately rather than queue behind it.
+        started = time.monotonic()
+        result = cache.cached("fast", 3600, lambda: _fail_if_called())
+        elapsed = time.monotonic() - started
+
+        assert result == {"v": "cached"}
+        assert elapsed < 1.0, f"fast key waited {elapsed:.2f}s behind an unrelated slow key"
+
+        release_slow.set()
+        slow_thread.join(timeout=5)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _fail_if_called():
+    raise AssertionError("producer should not run for an existing fresh cache hit")
+
+
 # ── lazy directory creation ──────────────────────────────────────────────
 # Found by inspecting the real data/ directory and finding a dozen empty
 # leftover namespace folders (test_snapshot_ns, test_panels_shape_ns, and

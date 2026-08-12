@@ -855,6 +855,66 @@ def test_wiki_a_renamed_or_missing_article_returns_none_not_a_crash():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ── _openalex(): meta.count extraction and the sustained-outage breaker ──
+def test_openalex_extracts_meta_count_for_both_windows():
+    t = Topic("t1", "Topic One", "AI", "query one")
+    responses = [{"meta": {"count": 42}}, {"meta": {"count": 30}}]
+    hol, tmp = _isolated_holmdel()
+    try:
+        with patch.object(holmdel, "TOPICS", (t,)), \
+             patch.object(holmdel, "try_json", side_effect=responses), \
+             patch("time.sleep"):
+            out = hol._openalex(3600)
+        assert out == {"t1": {"recent": 42, "prior": 30}}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_openalex_stops_on_the_first_fully_silent_topic():
+    """Found live, not in a test: OpenAlex sometimes accepts the connection
+    and never answers at all, rather than failing fast with a 429/503 (both
+    already handled). try_json's default={} means a hung/failed call still
+    returns promptly here in a mocked test, but the *real* http.py burns a
+    full ~90s retry budget per call in that scenario -- with 32 topics that
+    is up to ~90 minutes of a live board hanging on data that was never
+    coming. An earlier version of this breaker waited for three consecutive
+    silent topics before giving up; confirmed live, that was still slow
+    enough that a real request never completed inside a 10-minute test
+    ceiling. One topic with neither window returning a count -- already 6
+    real failed network attempts (3 retries x 2 windows, each already
+    exhausting http.py's own backoff budget) -- is stopped on immediately;
+    topics after it must never even be attempted."""
+    topics = tuple(Topic(f"t{i}", f"Topic {i}", "AI", f"query {i}") for i in range(10))
+    hol, tmp = _isolated_holmdel()
+    try:
+        with patch.object(holmdel, "TOPICS", topics), \
+             patch.object(holmdel, "try_json", return_value={}), \
+             patch("time.sleep"):
+            out = hol._openalex(3600)
+        assert set(out.keys()) == {"t0"}
+        assert out["t0"] == {"recent": None, "prior": None}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_openalex_does_not_trip_on_a_topic_with_only_one_silent_window():
+    """A topic where *one* window comes back empty but the other has a real
+    count is a normal, expected result (e.g. a brand-new topic with no
+    prior-window papers yet), not evidence of an outage -- only both windows
+    coming back empty at once counts as a signal worth stopping on."""
+    t = Topic("t1", "Topic One", "AI", "query one")
+    responses = [{"meta": {"count": 7}}, {}]   # recent: real count; prior: empty
+    hol, tmp = _isolated_holmdel()
+    try:
+        with patch.object(holmdel, "TOPICS", (t,)), \
+             patch.object(holmdel, "try_json", side_effect=responses), \
+             patch("time.sleep"):
+            out = hol._openalex(3600)
+        assert out == {"t1": {"recent": 7, "prior": None}}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 # ── _arxiv(): quoted-phrase totals via regex, and the rotation guarantee ─
 def test_arxiv_extracts_total_from_valid_opensearch_xml():
     t = Topic("t1", "Topic One", "AI", "query one")

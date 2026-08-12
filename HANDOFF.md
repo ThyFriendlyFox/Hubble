@@ -43,9 +43,13 @@ re-running the same slow fetch instead of one paying the cost and the rest
 waiting, fixed with a per-instance lock), and a header layout bug where a
 telescope with many sources (Holmdel, 7) could squeeze the nav tabs into
 wrapping even at full desktop width because its own freshness readout had
-no width cap (fixed by capping `.readout` with ellipsis truncation). Every
-wired interactive control in `app.js` has now been driven live at least
-once; the most recent pass was a clean sweep, no new bug.
+no width cap (fixed by capping `.readout` with ellipsis truncation). A third:
+`Cache`'s stampede-fix lock was one-per-telescope rather than one-per-key, so
+a single stuck source (OpenAlex hanging rather than failing fast) blocked
+reads of every other, already-fresh cached source too — fixed with per-key
+locking, plus a circuit breaker in `_openalex()` for the sustained-hang case
+itself (see the blocked-sources table below). Every wired interactive
+control in `app.js` has now been driven live at least once.
 
 **All of this is exhaustively detailed in `roadmap.py`** (and its generated
 form, `ROADMAP.md` / the dashboard's ROADMAP tab) — this section is only the
@@ -79,7 +83,7 @@ not the same as "permanently impossible," so don't skip this:
 | SAM.gov opportunities | `404` on the public search path | needs a registered API key |
 | Semantic Scholar | `429`, occasionally a genuine `200` | small pool shared globally by every unkeyed caller; an isolated success isn't real unblocking — confirmed by immediately retrying several more times, still 429 |
 | Jackson's own SBIR fetch | `429` / `403`, inconsistently either | independent of SAM.gov's key requirement |
-| Holmdel's OpenAlex source | cycles between `429` (small daily USD budget, resets midnight UTC, easily exhausted by this project's own real testing volume) and occasional `503` (an unrelated, external OpenAlex-side cluster-load issue) | not a code bug either way — `Cache.cached()`'s stampede fix and the `is_empty` stale-fallback guard both already handle it gracefully; verified live |
+| Holmdel's OpenAlex source | cycles between `429` (small daily USD budget, resets midnight UTC, easily exhausted by this project's own real testing volume), occasional `503` (an unrelated, external OpenAlex-side cluster-load issue), and — newly observed — sometimes just hangs, accepting the TCP connection and never responding at all | not a code bug — `Cache.cached()`'s stampede fix, the `is_empty` stale-fallback guard, per-key cache locking, and `_openalex()`'s circuit breaker (trips on the first fully-silent topic) all now handle every one of these gracefully; verified live, including a 47.3s end-to-end board load while the hang was actively ongoing |
 
 **A finding, not a fix — needs a human call:** the documented `api.sam.gov`
 partner API still 404s without a key (table above). But SAM.gov's own

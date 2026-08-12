@@ -205,6 +205,12 @@ class Holmdel(Telescope):
               "it outright, showing no research signal at all until the next "
               "reset rather than a stale one, which is worth knowing before "
               "reading too much into a quiet RESEARCH VELOCITY column. "
+              "OpenAlex occasionally stops answering entirely rather than "
+              "failing fast, in which case the sweep gives up on it after "
+              "the first fully-silent topic instead of grinding through "
+              "the rest at full retry cost — a quiet column can mean this "
+              "happened partway through, not that every topic was checked "
+              "and came back empty. "
               "arXiv is a genuinely separate preprint-velocity signal, kept "
               "apart rather than summed with OpenAlex's — OpenAlex ingests "
               "arXiv too, so combining them would double count the same "
@@ -421,6 +427,33 @@ class Holmdel(Telescope):
         "state space model" matches 6.5M works (anything containing all three
         words anywhere), quoted it matches ~99K. `per_page=1` is enough
         because we only read `meta.count`, not the works themselves.
+
+        Circuit breaker on the first fully-silent topic: found live, not in
+        a test — OpenAlex has a failure mode neither the daily-budget 429
+        nor the cluster-load 503 (both already documented and already
+        handled gracefully) covers: sometimes it accepts the TCP connection
+        and then never sends a response at all, so `try_json`'s
+        `_request()` burns its *full* 30s-times-3-retries budget (~90s+
+        backoff) on that one call before giving up and returning the
+        default. With 32 topics × 2 windows each, a genuine outage of this
+        shape — not a fast-failing one — means grinding through all 64
+        calls at ~90s apiece: confirmed live, a real board load hung for
+        the full 10-minute test ceiling without ever completing even with
+        an earlier version of this breaker that waited for three
+        consecutive silent topics (already ~90s × 6 calls ≈ 9 minutes of
+        worst case, still too slow to matter for a live request). One
+        topic's `recent` *and* `prior` both coming back empty already means
+        6 real network attempts (3 retries × 2 windows, each already given
+        `http.py`'s own full backoff budget) all failed — that's strong
+        enough evidence of a sustained outage on its own; waiting for a
+        second or third confirmation only multiplies the worst case for
+        little added certainty. try_json already keeps any single request
+        from crashing the sweep; this keeps a *sustained* failure from
+        making the whole board hang for however long the full loop would
+        otherwise take. The results already collected before the trip still
+        go through the same is_empty/stale-fallback path below exactly as
+        before, and a topic with only *one* silent window doesn't trip it —
+        only two real signals both coming back empty counts as evidence.
         """
         def go():
             today = dt.date.today()
@@ -441,6 +474,8 @@ class Holmdel(Telescope):
                 recent = window(today - span, today)
                 prior = window(today - 2 * span, today - span)
                 out[t.key] = {"recent": recent, "prior": prior}
+                if recent is None and prior is None:
+                    break
                 time.sleep(0.15)     # generous unauthenticated quota, still be polite
             return out
 
