@@ -11,8 +11,8 @@ Six telescopes (Hubble, Jackson, Simons, Kepler, Holmdel, Reddington) run on
 live public data, no API keys. Kernel in `telescope/`, one domain pack per
 telescope in `observatories/`, one generic frontend driven entirely by
 telescope metadata. 119 kernel tests + 101 domain-pack tests + 92 live tests
-+ 22 zero-dependency Node tests over app.js's formatters, panel sort and
-tooltip logic (check the actual counts with `-q` / `node --test`, don't
++ 33 zero-dependency Node tests covering every DOM-free function in
+static/app.js (check the actual counts with `-q` / `node --test`, don't
 trust these numbers for long).
 
 Every Phase 0–4 roadmap item (the six telescopes and their core signals) is
@@ -98,8 +98,11 @@ now — don't default back into any of them without a genuinely new angle
 re-checking, a section of the app never yet touched):
 
 1. **Extend test coverage.** Done — the entire Python codebase is
-   individually audited; every remaining gap is a deliberately-judged
-   omission. Won't find anything new without new code to cover.
+   individually audited, and every DOM-free function in `static/app.js` now
+   has real coverage too (see below). Every remaining gap is a
+   deliberately-judged omission (Python) or would need a real DOM shim
+   (the rendering/event-wiring half of app.js) — won't find anything new
+   without either new code to cover or that bigger framework decision.
 2. **Verify a documentation file against reality.** Done for
    `TELESCOPES.md`, `README.md`, and every domain pack's own module
    docstring. `ROADMAP.md` is generated so it can't drift; `app.js`/
@@ -115,24 +118,29 @@ re-checking, a section of the app never yet touched):
 4. **Re-probe blocked sources for a real change.** Ongoing, every
    iteration, via the table above — cheap and already part of the loop.
 
-`static/app.js`'s pure/DOM-free logic now has real coverage — `tests_js/`,
-using Node's built-in `node:test`/`node:vm` (already on the machine, zero
-npm install, zero package.json) to sandbox-extract the actual functions out
-of the shipped file rather than a hand-copied duplicate. Covers the format
-helpers (esc/fmtNum/fmtInt/fmtMoney/fmtPrice/fmtPct/fmtSigned/fmtText/
-fmtUrl/cell/ago), the panel sort comparator (sortPanelRows), and the
-score-breakdown tooltip builder (buildTip/fmtRaw, extracted alongside the
-real mutable `state` object rather than a stand-in shape). Note for anyone
-extending this further: an array returned from code run inside a vm context
-belongs to that context's own realm, so `assert.deepEqual`/`deepStrictEqual`
-will reject it against a same-realm array literal even when every element
-matches — read values out with `Array.from(x, mapper)` from the test's own
-realm first (see tests_js/panel_and_tip.test.js's comment). The rest of
-app.js (DOM rendering, event wiring, the fetch/localStorage-touching code)
-still has none, and would need a real DOM shim (jsdom or similar) to test —
-that's still the dependency-adding decision this loop shouldn't make
-unilaterally, so if `tests_js/` is ever not enough, surface that as an
-option rather than starting it.
+`static/app.js`'s pure/DOM-free logic has real coverage — `tests_js/`, using
+Node's built-in `node:test`/`node:vm` (already on the machine, zero npm
+install, zero package.json) to sandbox-extract the actual functions out of
+the shipped file rather than a hand-copied duplicate. Covers the format
+helpers, the panel sort comparator (`sortPanelRows`), the score-breakdown
+tooltip builder (`buildTip`/`fmtRaw`), the watchlist persistence functions
+(`loadWatchlist`/`saveWatchlist`/`isWatched`/`toggleWatch`, via a tiny
+`FakeStorage` stand-in for `localStorage` — not a DOM shim, just its
+four-method interface), and the main table's filter+sort pipeline
+(`filtered()`). Every top-level function in `app.js` has been read and
+classified at this point: what's DOM-free is tested; the rest (`render*`,
+event wiring, `positionTip`/`hideTip`/`wireTipDelegation`, `podium()` —
+anything touching `document`/`fetch`/`window`) genuinely needs a live
+document and stays the dependency-adding decision this loop shouldn't make
+unilaterally — surface a real DOM-shim framework as an option rather than
+starting it, if it ever comes to that. Two vm-testing gotchas are
+documented inline (in `panel_and_tip.test.js` and `watchlist_and_filter.
+test.js`) for whoever extends this next: values built by code running
+*inside* a vm context belong to that context's own realm, so `assert.
+deepEqual`/`deepStrictEqual` rejects them against same-realm literals even
+when every element matches — read arrays out with `Array.from(x, mapper)`
+and compare objects via `JSON.stringify` instead of comparing vm-realm
+values directly.
 
 ## Then work the roadmap
 

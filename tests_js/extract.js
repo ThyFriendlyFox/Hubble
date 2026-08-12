@@ -31,21 +31,63 @@ function extractBraced(source, anchor) {
   throw new Error(`extractBraced: unbalanced braces extracting: ${JSON.stringify(anchor)}`);
 }
 
-/* Extracts `anchors` (each a `function name(...)` / `const NAME = {` /
-   `let name = {` signature as it literally appears in app.js) as a block of
-   source text, evaluates them together in one fresh vm context, and hands
-   back an object with one property per name in `exportNames` -- so callers
-   never touch the context object directly and don't need to know whether a
-   given binding happens to attach to it (function decls and `var` do; `let`/
-   `const` don't, which is exactly what this sidesteps). */
-function loadFromAppJs(anchors, exportNames) {
+/* For a one-line, non-braced statement like `const WATCHLIST_KEY = "...";` --
+   extractBraced can't extract these since there's no `{` to balance against. */
+function extractStatement(source, anchor) {
+  const idx = source.indexOf(anchor);
+  if (idx === -1) {
+    throw new Error(`extractStatement: anchor not found in app.js: ${JSON.stringify(anchor)}`);
+  }
+  const end = source.indexOf(";", idx);
+  if (end === -1) {
+    throw new Error(`extractStatement: no terminating ';' found for: ${JSON.stringify(anchor)}`);
+  }
+  return source.slice(idx, end + 1);
+}
+
+/* Extracts `specs` (each a `function name(...)` / `const NAME = {` /
+   `let name = {` signature as it literally appears in app.js, or `{stmt:
+   "..."}` for a one-line non-braced statement) as a block of source text,
+   evaluates them together in one fresh vm context, and hands back an object
+   with one property per name in `exportNames` -- so callers never touch the
+   context object directly and don't need to know whether a given binding
+   happens to attach to it (function decls and `var` do; `let`/`const`
+   don't, which is exactly what this sidesteps). `extraGlobals` seeds the vm
+   context with anything the extracted code expects to find as a free
+   global (e.g. a fake `localStorage`). */
+function loadFromAppJs(specs, exportNames, extraGlobals) {
   const source = fs.readFileSync(APP_JS_PATH, "utf8");
-  const blocks = anchors.map((anchor) => extractBraced(source, anchor));
+  const blocks = specs.map((spec) =>
+    typeof spec === "string" ? extractBraced(source, spec) : extractStatement(source, spec.stmt)
+  );
   const combined =
     blocks.join("\n") + "\nthis.__exports__ = { " + exportNames.join(", ") + " };\n";
-  const context = vm.createContext({});
+  const context = vm.createContext({ ...extraGlobals });
   vm.runInContext(combined, context, { filename: "static/app.js (extracted)" });
   return context.__exports__;
+}
+
+/* A minimal Web Storage stand-in -- not a DOM shim, just the four-method
+   key/value interface localStorage exposes. Injected as a vm global so
+   loadWatchlist/saveWatchlist/isWatched/toggleWatch/filtered() can run
+   unmodified; tests get the same instance back so they can seed malformed
+   data or inspect exactly what got persisted. */
+class FakeStorage {
+  constructor() {
+    this._data = new Map();
+  }
+  getItem(key) {
+    return this._data.has(key) ? this._data.get(key) : null;
+  }
+  setItem(key, value) {
+    this._data.set(key, String(value));
+  }
+  removeItem(key) {
+    this._data.delete(key);
+  }
+  clear() {
+    this._data.clear();
+  }
 }
 
 /* Every name here is a pure function/const in app.js's "format a raw value
@@ -97,4 +139,43 @@ function loadPanelHelpers() {
   );
 }
 
-module.exports = { loadFormatHelpers, loadSortPanelRows, loadPanelHelpers, extractBraced };
+const WATCHLIST_ANCHORS = [
+  { stmt: "const WATCHLIST_KEY = " },
+  "function loadWatchlist()",
+  "function saveWatchlist(all)",
+  "function isWatched(slug, key)",
+  "function toggleWatch(slug, key)",
+];
+const WATCHLIST_NAMES = ["loadWatchlist", "saveWatchlist", "isWatched", "toggleWatch"];
+
+/* localStorage is the only global these four touch -- no document, no
+   `state`. Returns the storage instance alongside the functions so tests
+   can seed malformed JSON or inspect exactly what got persisted. */
+function loadWatchlistHelpers() {
+  const storage = new FakeStorage();
+  const helpers = loadFromAppJs(WATCHLIST_ANCHORS, WATCHLIST_NAMES, { localStorage: storage });
+  return { ...helpers, storage };
+}
+
+/* filtered() is the main table's real filter+sort pipeline: reads state.rows
+   plus every filter toggle in state, and calls isWatched() for the watched-
+   only filter -- so it needs both the state initializer and the watchlist
+   chain (hence localStorage) alongside itself. */
+function loadFilteredHelper() {
+  const storage = new FakeStorage();
+  const helpers = loadFromAppJs(
+    [...WATCHLIST_ANCHORS, "let state = {", "function filtered()"],
+    [...WATCHLIST_NAMES, "state", "filtered"],
+    { localStorage: storage }
+  );
+  return { ...helpers, storage };
+}
+
+module.exports = {
+  loadFormatHelpers,
+  loadSortPanelRows,
+  loadPanelHelpers,
+  loadWatchlistHelpers,
+  loadFilteredHelper,
+  extractBraced,
+};
