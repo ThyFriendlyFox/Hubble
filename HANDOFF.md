@@ -144,9 +144,28 @@ saying "every telescope's board." Both correct end to end: real podium
 data, correct caveats, the right secondary panel and full-index columns,
 live re-ranking confirmed on a weight change. All six telescopes have
 now actually been opened and clicked through live at some point, not
-just exercised via `test_live.py`'s API-level checks. `roadmap.py`'s own
-Phase 5, 6 and 7 entries are the detailed log — this is only the shape
-of it.
+just exercised via `test_live.py`'s API-level checks. Jackson's SBIR
+status-code claim ("429s") got corrected to match reality (403, on the
+real endpoint the code calls, not a different one) in both its module
+docstring and its live board caveat — the domain-pack-docstring-vs-code
+audit's one real finding; Holmdel/Simons checked out clean, Kepler/
+Hubble/Reddington have no status-code claims to drift. Holmdel's own
+flagged second live pass happened next, waiting for the real UTC
+rollover rather than guessing — and OpenAlex's response changed at
+midnight, but not to a clean 200: it's now a consistent `503` ("search
+cluster recovers from heavy load"), a genuinely different, currently-
+ongoing OpenAlex-side outage, unrelated to and not caused by this
+session's own request volume (unlike the 429 budget-exhaustion that
+preceded it). Drove Holmdel's board live anyway rather than wait out an
+unpredictable second outage — the real question was whether the
+resilience work already shipped (the cache-stampede fix, the `is_empty`
+stale-fallback guard) holds up against a failure mode neither was
+specifically written for, and it did: `openalex.json` correctly stayed
+on its stale-but-real fallback, every other source served warm, and the
+whole request completed in 138 seconds with a real result — down from
+never completing at all during the original stampede bug. No code
+change needed. `roadmap.py`'s own Phase 5, 6 and 7 entries are the
+detailed log — this is only the shape of it.
 
 Work is on branch `claude/telescope-dashboard-concept-lo1ay8`, open as **PR #1**.
 Pushing to that branch updates the PR — do not open a new one.
