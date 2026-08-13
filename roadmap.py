@@ -3371,6 +3371,37 @@ PHASES = [
                        "complete 32-row board in 20.2s. No code changed "
                        "this iteration; fast suites re-run green (224 + "
                        "33) as a sanity check"},
+            {"name": "OpenAlex's multi-day outage resolved -- confirmed "
+                     "live that the fix handles recovery gracefully too, "
+                     "not just degradation",
+             "done": True,
+             "detail": "the source re-probe returned a genuine 200 with "
+                       "real data (a sensible meta.count, cost_usd: 0.001 "
+                       "matching its documented per-query USD-budget "
+                       "billing) for the first time in many iterations -- "
+                       "3 of 4 immediate retries succeeded, unlike "
+                       "Semantic Scholar's isolated 200 in the same probe, "
+                       "which reverted to 429 on every retry exactly as "
+                       "HANDOFF's table already expects, so only OpenAlex "
+                       "counts as a real change here. A follow-up Holmdel "
+                       "request took 50.5s (versus the ~20s this session's "
+                       "many prior clean iterations settled into) because "
+                       "the sweep now actually completes the full 32-topic "
+                       "OpenAlex fetch rather than short-circuiting via "
+                       "the breaker -- and openalex.json's mtime finally "
+                       "moved for the first time since it went stale on "
+                       "Aug 11 20:10:13, now holding real per-topic counts "
+                       "for all 32 topics (spot-checked: agents 21924/"
+                       "13431, rag 18287/14982, ssm 8085/6996 -- sensible "
+                       "magnitudes, not zeros or nulls). This is the "
+                       "recovery-path counterpart to last iteration's "
+                       "outage-path verification: confirms the whole "
+                       "system -- per-key cache locking, the circuit "
+                       "breaker, and the is_empty stale-fallback guard -- "
+                       "handles a source coming back online just as "
+                       "cleanly as it handles one going down, without "
+                       "needing to be told which state it's in. No code "
+                       "changed; fast suites re-run green (224 + 33)"},
         ],
     },
     {
