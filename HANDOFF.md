@@ -71,13 +71,17 @@ python -m pytest tests/test_live.py -q           # hits real sources, slow when 
 node --test tests_js/*.test.js                   # app.js's pure formatters, zero npm deps
 ```
 
-If a running dev server has died (check `ps aux | grep app.py`; a long gap since the
-last iteration — a suspended/resumed environment — is the likely cause, not a code
-bug), don't just background `scripts/dev.sh` yourself: the port it lands on is
-whatever the browser-preview tooling's own `autoPort` assigns (`.claude/launch.json`
-names port 5000, but that's a starting point, not a fixed value), so restart it
-through that tool instead and read the port back from its own result rather than
-assuming 5000 or whatever port was in use last time.
+**Check the dev server is actually up at the start of every iteration** — don't
+assume it survived from last time. It's been found dead not just after a multi-day
+gap but after a ~45-minute one too, so treat "still running" as something to verify,
+not assume, regardless of how short the gap looks. If it's died (`ps aux | grep
+app.py` shows nothing, or the last-known port refuses connections), don't just
+background `scripts/dev.sh` yourself: the port it lands on is whatever the
+browser-preview tooling's own `autoPort` assigns (`.claude/launch.json` names port
+5000, but that's a starting point, not a fixed value, and it changes on every
+restart), so restart it through that tool (`preview_start` with name `hf-dash`) and
+read the actual port back from its own result — don't reuse a port remembered from
+an earlier iteration.
 
 ## Start here: re-probe what's still blocked, then read the roadmap
 

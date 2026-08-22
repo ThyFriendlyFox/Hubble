@@ -3457,6 +3457,34 @@ PHASES = [
                        "Fast suites re-run green (224 Python + 33 JS); no "
                        "other drift found in the repo or the git remote "
                        "during the gap"},
+            {"name": "Refined the dormancy-recovery finding: the dev "
+                     "server dies on short gaps too, not just multi-day "
+                     "ones -- now checked and restarted every iteration "
+                     "as a matter of course",
+             "done": True,
+             "detail": "the very next iteration after the ~9-day-gap "
+                       "recovery above, this same loop (re-entered fresh "
+                       "via a newly-set-up cron job rather than the "
+                       "session's own self-paced wakeup) found the dev "
+                       "server dead again -- this time after roughly 45 "
+                       "minutes, not 9 days. preview_list came back "
+                       "completely empty (no tracked servers at all), "
+                       "confirming the whole browser-preview session had "
+                       "been torn down, not just the app.py process "
+                       "crashing on its own. Restarted the same way as "
+                       "before (the preview tool, reading the fresh "
+                       "port back rather than assuming one), and Holmdel's "
+                       "board came back correctly once its cache warmed "
+                       "up again -- confirming this really is about the "
+                       "server process's own lifecycle rather than "
+                       "anything wrong with the app or its data. "
+                       "Corrected HANDOFF.md's own guidance from last "
+                       "iteration accordingly: checking the server is "
+                       "alive belongs at the start of *every* iteration, "
+                       "not just ones following an obviously long gap -- "
+                       "a short-looking gap between firings doesn't mean "
+                       "the environment stayed up. No code changed; fast "
+                       "suites re-run green (224 + 33)"},
         ],
     },
     {
