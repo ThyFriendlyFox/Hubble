@@ -6011,6 +6011,97 @@ PHASES = [
                        "change from any prior finding."},
         ],
     },
+    {
+        "title": "PHASE 25 · A CLEAN STEADY-STATE ITERATION",
+        "status": "next",
+        "note": "After README.md's real drift last iteration, checked "
+                "several more places a similar gap could be hiding "
+                "before concluding there wasn't one, then ran a "
+                "comprehensive live regression sweep on the two "
+                "telescopes with the least direct attention during nine "
+                "straight iterations of accessibility/security frontend "
+                "work. Everything came back clean -- the correct, "
+                "expected outcome after this many consecutive real fixes, "
+                "not a sign the checking was shallow.",
+        "items": [
+            {"name": "Checked TELESCOPES.md, requirements.txt, and "
+                     ".gitignore for the same class of drift README.md "
+                     "just had -- all three came back genuinely clean, "
+                     "confirmed rather than assumed", "done": True,
+             "detail": "TELESCOPES.md already has a full, accurate "
+                       "Pasteur section (entity/join-key/sources/signals/"
+                       "events/hard-part table, written when Pasteur "
+                       "shipped) and its 'build order' section correctly "
+                       "excludes Pasteur from the historical five-"
+                       "telescope planning narrative it documents -- not "
+                       "a gap, since that section is explicitly framed as "
+                       "a record of the original plan, not a live status "
+                       "tracker. requirements.txt lists exactly flask and "
+                       "requests; grepped every .py file's own imports "
+                       "and found nothing third-party missing or "
+                       "unnecessarily listed (tweepy stays deliberately "
+                       "excluded, per its own optional-dependency "
+                       "docstring). .gitignore correctly excludes data/, "
+                       "__pycache__/, .venv/, .coverage, and confirmed via "
+                       "`git ls-files` that no data/ file has ever "
+                       "actually been tracked. Also grepped every 'six "
+                       "telescope(s)' mention fleet-wide outside README -- "
+                       "all of them are inside roadmap.py phase narratives "
+                       "or HANDOFF.md prose correctly describing what was "
+                       "true at a specific point in the project's history, "
+                       "not current-state claims that have gone stale."},
+            {"name": "Ran a full live regression sweep on Simons and "
+                     "Reddington -- the two telescopes that got the least "
+                     "direct, dedicated attention across nine straight "
+                     "iterations of accessibility and security work on "
+                     "shared frontend code", "done": True,
+             "detail": "Confirmed on Simons (three panels: THE CURVE, "
+                       "WHALE MOVES, AI CAPEX WATCH -- the most panel-"
+                       "heavy telescope in the fleet, a genuinely "
+                       "different shape from the single-panel cases "
+                       "checked during the accessibility work itself): "
+                       "all three panels render as real, uniquely-"
+                       "numbered <h2> headings (panel-heading-0/1/2) each "
+                       "correctly matched to its own <section>'s aria-"
+                       "labelledby with zero id collisions; THE CURVE "
+                       "(a pure cross-telescope read, no watch column by "
+                       "design) correctly omits the watch-th while WHALE "
+                       "MOVES' 20 watchable rows carry the full role/"
+                       "tabindex/aria-pressed/aria-label set; the main "
+                       "table's watch star and score cell both carry "
+                       "correct attributes; the fixed --ink-faint color "
+                       "renders as the real patched value (rgb(128, 128, "
+                       "125)) on a live rank cell, not the old failing "
+                       "one. Confirmed on Reddington: correct heading "
+                       "structure including its own COST VS VOLUME panel, "
+                       "skip link present and correctly wired to a "
+                       "tabindex=\"-1\" main, and a real watch-star click "
+                       "genuinely toggles aria-pressed end to end. No "
+                       "console errors on either beyond the same pre-"
+                       "existing, already-documented benign favicon.ico "
+                       "404 this project flagged as a red herring back in "
+                       "Phase 7."},
+            {"name": "Concluded honestly that this iteration found no "
+                     "new gap worth fixing, rather than manufacturing "
+                     "one -- reran both fast suites and the JS suite "
+                     "anyway as standing discipline before reporting a "
+                     "no-op", "done": True,
+             "detail": "272 Python tests and 33 JS tests all still pass. "
+                       "Dev server reconfirmed healthy on its running "
+                       "port, all seven telescopes registered, zero "
+                       "load_errors -- no restart needed. Re-probed all "
+                       "four historically-blocked sources (SAM.gov, "
+                       "Semantic Scholar, Jackson's SBIR, Holmdel's "
+                       "OpenAlex) -- no change from any prior finding. "
+                       "This entry itself is the only change this "
+                       "iteration produced -- no application code, test, "
+                       "or other documentation file needed touching, "
+                       "which is the correct, expected shape for a "
+                       "steady-state iteration after this many "
+                       "consecutive real fixes, not evidence the "
+                       "checking was shallow."},
+        ],
+    },
 ]
 
 
