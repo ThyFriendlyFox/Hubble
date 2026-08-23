@@ -198,7 +198,22 @@ re-checking, a section of the app never yet touched):
    right after every `@` (`_defang_mentions()`), which breaks mention
    parsing while reading identically to a human. All three output channels
    are now checked; worth a re-check if a new one is ever added, or if any
-   existing one starts embedding raw external text somewhere new.
+   existing one starts embedding raw external text somewhere new. A third
+   pass turned this same lens on the dashboard's own rendering, not an
+   output channel: six `innerHTML` sites in `static/app.js` interpolated a
+   server error message or a caught JS exception (`${data.error}`/`${e}`)
+   with no `esc()` — a real, unmitigated stored/reflected-XSS-shaped gap
+   (confirmed live: a mocked error response containing
+   `<img src=x onerror="...">` executed the handler through the
+   unescaped path and rendered as inert text through the fixed one; no
+   CSP header exists to have caught this as a second layer). The concrete
+   trigger is narrow today — `to_float()` and friends already swallow the
+   coercion errors that would otherwise echo raw external values back
+   verbatim, and no domain pack currently raises with untrusted content in
+   the message — but fixed anyway as defense-in-depth, matching this
+   project's standard for a real gap rather than an already-proven live
+   exploit. All six wrapped with `esc()` (which already safely stringifies
+   non-string values, so no separate `String()` conversion needed).
 6. **Keyboard/screen-reader operability of custom (non-native) interactive
    elements.** Distinct from avenue 3, which only ever drove controls with a
    mouse click — never checked whether the same controls work without one.

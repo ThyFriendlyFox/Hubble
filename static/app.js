@@ -368,7 +368,7 @@ async function load(refresh = false) {
     const data = await r.json();
     if (state.slug !== requestedSlug) return;   // superseded by a later switch
     if (data.error) {
-      $("#rows").innerHTML = `<tr><td colspan="${cols}" class="loading">⚠ ${data.error}</td></tr>`;
+      $("#rows").innerHTML = `<tr><td colspan="${cols}" class="loading">⚠ ${esc(data.error)}</td></tr>`;
       return;
     }
     state.meta = data.telescope;
@@ -386,7 +386,7 @@ async function load(refresh = false) {
     loadFeed();
   } catch (e) {
     if (state.slug !== requestedSlug) return;
-    $("#rows").innerHTML = `<tr><td colspan="${cols}" class="loading">⚠ ${e}</td></tr>`;
+    $("#rows").innerHTML = `<tr><td colspan="${cols}" class="loading">⚠ ${esc(e)}</td></tr>`;
   } finally {
     if (state.slug === requestedSlug) $("#refresh").disabled = false;
   }
@@ -761,7 +761,7 @@ async function loadFeed() {
     feedEvents = data.events || [];
     renderFeed();
   } catch (e) {
-    $("#feed").innerHTML = `<div class="feed-empty">⚠ ${e}</div>`;
+    $("#feed").innerHTML = `<div class="feed-empty">⚠ ${esc(e)}</div>`;
   }
 }
 
@@ -828,7 +828,7 @@ async function loadRoadmap() {
       .join("");
     el.dataset.loaded = "1";
   } catch (e) {
-    el.innerHTML = `<div class="feed-empty">⚠ ${e}</div>`;
+    el.innerHTML = `<div class="feed-empty">⚠ ${esc(e)}</div>`;
   }
 }
 
@@ -867,7 +867,7 @@ async function loadBrief() {
       })
       .join("");
   } catch (e) {
-    el.innerHTML = `<div class="feed-empty">⚠ ${e}</div>`;
+    el.innerHTML = `<div class="feed-empty">⚠ ${esc(e)}</div>`;
   }
 }
 $("#send-brief").addEventListener("click", async () => {
