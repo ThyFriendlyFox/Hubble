@@ -150,13 +150,23 @@ re-checking, a section of the app never yet touched):
    `TELESCOPES.md`, `README.md`, and every domain pack's own module
    docstring. `ROADMAP.md` is generated so it can't drift; `app.js`/
    `style.css`/`index.html` have no prose docs to drift from.
-3. **Drive the dashboard in a real browser.** Done for all six telescopes'
+3. **Drive the dashboard in a real browser.** Done for all seven telescopes'
    boards and every wired interactive control in `app.js`, down to the
    panel-level sort/watch, the cross-telescope watched-only feed filter,
-   SEND NOW, and the hover score-breakdown tooltip. This is the avenue
-   that's found real bugs *three times* now (all fixed); the most recent
-   pass found nothing new. Still worth a re-check after new code lands or
-   if a flow gets reshaped — but there's no untested control left to find
+   SEND NOW, and the hover score-breakdown tooltip. Pasteur only got a
+   partial spot-check when it first shipped (basic rendering, sliders, the
+   tooltip); a follow-up pass ran the same full checklist Phase 7 gave the
+   original six (column sort, watch star, WATCHED ONLY, SAVE VIEW's
+   create/apply/delete cycle, narrow-viewport layout) and found a real bug:
+   the weight sliders in `static/app.js` had no `step` attribute, so the
+   browser's implicit `step=1` silently snapped Pasteur's own
+   `centrality: 0.6` default weight to `1` on the native slider element
+   (every other telescope's default weights are whole integers, so nothing
+   had ever triggered this before) — fixed with `step="0.1"`. This is the
+   avenue that's found real bugs *four times* now
+   (all fixed); the most recent pass on the other six telescopes found
+   nothing new. Still worth a re-check after new code lands or if a flow
+   gets reshaped — but there's no untested control left to find
    on the app as it stands today.
 4. **Re-probe blocked sources for a real change.** Ongoing, every
    iteration, via the table above — cheap and already part of the loop.

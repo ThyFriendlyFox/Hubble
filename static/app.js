@@ -401,7 +401,7 @@ function renderWeights() {
       const v = state.weights[s.key] ?? 0;
       return `<div class="weight">
         <label>${esc(s.label)} <b id="wv-${s.key}">${v}</b></label>
-        <input type="range" min="0" max="50" value="${v}" data-w="${s.key}">
+        <input type="range" min="0" max="50" step="0.1" value="${v}" data-w="${s.key}">
       </div>`;
     })
     .join("");
