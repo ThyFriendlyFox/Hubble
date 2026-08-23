@@ -5910,6 +5910,107 @@ PHASES = [
                        "change from any prior finding."},
         ],
     },
+    {
+        "title": "PHASE 24 · README.MD HADN'T HEARD OF PASTEUR",
+        "status": "next",
+        "note": "Eight straight accessibility/security passes on the "
+                "frontend was a real signal to look somewhere else -- "
+                "checked whether avenue 2 (verify a documentation file "
+                "against reality), marked exhausted for README.md before "
+                "Pasteur ever existed, actually got re-verified after it "
+                "shipped. It hadn't. The project's own front door was "
+                "missing a whole telescope, two real endpoints, and an "
+                "entire test suite.",
+        "items": [
+            {"name": "Re-read README.md fresh against current reality "
+                     "rather than trusting the old \"done\" mark, since "
+                     "that mark predated Pasteur, the Morning Brief "
+                     "endpoints, and tests_js/ -- found three separate, "
+                     "concrete omissions, not one", "done": True,
+             "detail": "The instruments table and \"what each one is "
+                       "actually for\" section listed exactly the "
+                       "original six telescopes -- Pasteur, live in the "
+                       "app for several iterations now with its own real "
+                       "kernel primitives (telescope/crawl.py, graph.py), "
+                       "was simply never added to this file. Cross-"
+                       "checked the API table against `grep "
+                       "\"@app.route\" app.py` directly rather than "
+                       "trusting the existing list was complete: it was "
+                       "missing `/api/observatory/brief` and `/api/"
+                       "observatory/brief/send`, both real, both shipped, "
+                       "both already documented in TELESCOPES.md and "
+                       "HANDOFF.md -- just never carried over to "
+                       "README.md. The Tests section and Layout file tree "
+                       "both predated tests_js/ entirely, so neither the "
+                       "`node --test` command nor the directory itself "
+                       "appeared anywhere in the file."},
+            {"name": "Verified the one row that looked like it might "
+                     "also be stale before touching it, rather than "
+                     "assuming -- confirmed it wasn't", "done": True,
+             "detail": "Hubble's README row says \"Artificial Analysis · "
+                       "Design Arena (both embedded in OpenRouter)\", "
+                       "while the live API's own terser sources_label "
+                       "reads \"BENCHMARKS · ARENA\" -- different enough "
+                       "wording to check rather than assume a match. "
+                       "Grepped hubble.py directly: `artificial_analysis` "
+                       "is still a real, current field it reads from "
+                       "OpenRouter's response, and the module's own "
+                       "docstring uses the identical fuller phrasing "
+                       "README already had. The short label is just a "
+                       "terser form of the same real source for the "
+                       "dashboard header, not evidence of a rename or "
+                       "removal -- left this row unchanged rather than "
+                       "flagging a non-issue."},
+            {"name": "Fixed all three gaps with content matching each "
+                     "shipped feature's own real behavior, not generic "
+                     "placeholder text", "done": True,
+             "detail": "Added Pasteur to both the table and the \"what "
+                       "each one is actually for\" prose -- described "
+                       "using its own real, already-verified behavior "
+                       "(trial-phase progression as the PDUFA-calendar "
+                       "substitute, PRESS CENTRALITY's PageRank-over-a-"
+                       "bounded-crawl mechanism, the crossing_over event "
+                       "shape it shares with Holmdel), not a placeholder "
+                       "description. Added both Morning Brief endpoints "
+                       "to the API table in their real HTTP-method/path "
+                       "form. Added tests_js/ to both the Tests section "
+                       "(the actual `node --test` command plus a "
+                       "paragraph explaining what it covers and how, "
+                       "matching the existing test_live.py/test_"
+                       "observatories.py paragraphs' own level of detail) "
+                       "and the Layout tree, plus telescope/crawl.py and "
+                       "graph.py (also missing from the kernel file "
+                       "listing) with a one-line note that they're "
+                       "Pasteur's own kernel additions. Fixed a small "
+                       "wording casualty of the tests_js/ addition too: "
+                       "test_observatories.py's own paragraph said it "
+                       "covered ground \"neither of the other two "
+                       "suites\" reached, written when there were only "
+                       "three suites total -- now four, so reworded to "
+                       "\"none of the other suites\" rather than leaving "
+                       "a sentence that was quietly wrong about its own "
+                       "count."},
+            {"name": "Confirmed no test asserts against README.md's own "
+                     "content before treating this as a pure documentation "
+                     "change with no code-level verification needed",
+             "done": True,
+             "detail": "Grepped tests/*.py for any README reference -- "
+                       "none exists, confirming this is a genuinely "
+                       "isolated documentation fix with no test surface "
+                       "to update alongside it. Ran both fast suites and "
+                       "the JS suite anyway as standard discipline: "
+                       "272 Python tests and 33 JS tests unaffected, "
+                       "exactly as expected for a Markdown-only change."},
+            {"name": "Verified nothing else drifted: dev server and "
+                     "blocked-sources table reconfirmed", "done": True,
+             "detail": "Dev server confirmed healthy on its running port "
+                       "with all seven telescopes registered and zero "
+                       "load_errors, no restart needed. Re-probed all four "
+                       "historically-blocked sources (SAM.gov, Semantic "
+                       "Scholar, Jackson's SBIR, Holmdel's OpenAlex) -- no "
+                       "change from any prior finding."},
+        ],
+    },
 ]
 
 

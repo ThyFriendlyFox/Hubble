@@ -149,7 +149,20 @@ re-checking, a section of the app never yet touched):
 2. **Verify a documentation file against reality.** Done for
    `TELESCOPES.md`, `README.md`, and every domain pack's own module
    docstring. `ROADMAP.md` is generated so it can't drift; `app.js`/
-   `style.css`/`index.html` have no prose docs to drift from.
+   `style.css`/`index.html` have no prose docs to drift from. A follow-up
+   pass re-checked `README.md` specifically, since it was last verified
+   before Pasteur (a seventh telescope) and its own two kernel modules
+   (`telescope/crawl.py`/`graph.py`) shipped — found it was missing all
+   three: Pasteur absent from both the instruments table and "what each one
+   is actually for", the two Morning Brief endpoints
+   (`/api/observatory/brief`, `/api/observatory/brief/send`) missing from
+   the API table despite being real and shipped, and `tests_js/` (the
+   zero-dependency Node suite) absent from both the Tests section and the
+   Layout file tree. Fixed all four; re-verified Hubble's own sources
+   row (`Artificial Analysis`/`Design Arena`) against `hubble.py`'s current
+   code before assuming it was also stale — it wasn't, the terser live
+   `sources_label` (`BENCHMARKS`/`ARENA`) is just a shorter form of the
+   same real source, not a rename.
 3. **Drive the dashboard in a real browser.** Done for all seven telescopes'
    boards and every wired interactive control in `app.js`, down to the
    panel-level sort/watch, the cross-telescope watched-only feed filter,

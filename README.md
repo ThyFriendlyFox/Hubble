@@ -27,6 +27,7 @@ No API keys. Every source below is public.
 | 🪐 | **Kepler** | Startups | issuers | SEC Form D · EDGAR · Hacker News · Greenhouse/Lever/Ashby · Holmdel (cross-reference) |
 | 📡 | **Holmdel** | Ideas | topics | Hacker News · Wikipedia pageviews · npm · OpenAlex · arXiv · GitHub |
 | 🚛 | **Reddington** | Logistics | gauges | FRED freight series · freight-sector equities |
+| 🧬 | **Pasteur** | Biotech | sponsors | ClinicalTrials.gov · BioSpace (crawled) |
 
 Each is **independently toggleable** from the TELESCOPES tab. A disabled
 telescope is never fetched and never polled, so you can run just Hubble on a
@@ -76,6 +77,15 @@ laptop or light the whole observatory on a server. Toggle state persists to
   Ashby, guessed from the company name) is layered on as the single most
   honest traction signal available for free. This is the complement to
   warm-intro dealflow: it surfaces what nobody has introduced you to.
+- **Pasteur** — clinical pipeline momentum by lead sponsor, sampled from
+  ClinicalTrials.gov's most recently updated trials. The FDA publishes no
+  free forward-looking PDUFA calendar, so this ranks on trial-phase
+  progression as an honest proxy for "approaching approval" instead. A
+  **PRESS CENTRALITY** signal — a Markov-chain (PageRank) ranking over a
+  small, bounded, robots.txt-respecting crawl of BioSpace's own press-release
+  network — surfaces sponsors getting outsized press attention before it
+  shows up in the trial data; a `crossing_over` event fires the same way
+  Holmdel's does, when press leads and the pipeline follows.
 
 ## How a telescope works
 
@@ -138,6 +148,8 @@ An instrument that doesn't state its blind spots invites you to over-trust it.
 | `GET /api/observatory` | every telescope's identity + toggle state (never fetches) |
 | `POST /api/observatory/<slug>/toggle` | enable/disable, `{"enabled": bool}` |
 | `GET /api/observatory/whats-new` | merged newest-first feed across enabled telescopes |
+| `GET /api/observatory/brief` | the morning brief digest, composed from already-cached data — never forces a sweep |
+| `POST /api/observatory/brief/send` | push the brief through the same Discord/Slack channels the schedule uses |
 | `GET /api/telescope/<slug>` | the board — `?weights=sig:val,…` `&refresh=1` |
 | `GET /api/telescope/<slug>/whats-new` | that telescope's events |
 | `POST /api/telescope/<slug>/sweep` | force a sweep + change detection |
@@ -149,6 +161,7 @@ An instrument that doesn't state its blind spots invites you to over-trust it.
 python -m pytest tests/test_kernel.py -q         # kernel pure logic, no network
 python -m pytest tests/test_observatories.py -q  # domain-pack logic, mocked network
 python -m pytest tests/test_live.py -q           # hits every real source
+node --test tests_js/*.test.js                   # static/app.js's pure formatters, zero npm deps
 ```
 
 `test_live.py` deliberately queries the live APIs rather than fixtures — a
@@ -157,8 +170,14 @@ worth catching. It asserts each telescope returns enough rows, that every
 declared signal and column is actually populated, that weights genuinely
 re-rank, and that the diff engine emits fully-rendered headlines.
 
-`test_observatories.py` covers the middle ground neither of the other two
-suites does: a domain pack's own business logic (entity-name matching, a
+`tests_js/` covers every DOM-free function in `static/app.js` — sort/filter
+logic, the watchlist's localStorage persistence, the score-breakdown tooltip
+builder — using Node's built-in `node:test`/`node:vm` to sandbox-extract the
+real shipped functions rather than testing a hand-copied duplicate. No
+package.json, no npm install.
+
+`test_observatories.py` covers the middle ground none of the other suites
+does: a domain pack's own business logic (entity-name matching, a
 multi-source fallback chain, XML field extraction) by mocking `telescope/
 http.py`'s fetch primitives directly, so it's pinned without touching the
 network — including logic `test_live.py`'s warm-cache fixtures often never
@@ -177,6 +196,7 @@ telescope/           the kernel — domain-agnostic
   snapshots.py       snapshot history + diff engine
   registry.py        registration + on/off toggles
   series.py         shared time-series adapters + analytics
+  crawl.py graph.py  bounded/polite web crawler + PageRank (Pasteur's kernel additions)
   cache.py http.py notifier.py
 observatories/       one module per telescope — the only domain-specific code
 templates/ static/   one generic frontend, driven by telescope metadata
@@ -184,6 +204,7 @@ tests/
   test_kernel.py         kernel pure logic, no network
   test_observatories.py  domain-pack logic, mocked network
   test_live.py           hits every real source
+tests_js/                static/app.js's pure formatters, zero npm deps
 ```
 
 See [ROADMAP.md](ROADMAP.md) for what's next and [TELESCOPES.md](TELESCOPES.md)
