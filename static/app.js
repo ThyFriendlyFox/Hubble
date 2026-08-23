@@ -1,179 +1,598 @@
-const WEIGHT_LABELS = {
-  intelligence: "INTELLIGENCE",
-  coding: "CODING",
-  agentic: "AGENTIC",
-  arena: "ARENA ELO",
-  usage: "REAL USAGE",
-  downloads: "DOWNLOADS",
-  likes: "LIKES",
-  price: "CHEAP PRICE",
-};
+/* THE OBSERVATORY — one frontend, every telescope.
+   Nothing here knows about LLMs, defense or capital: the table columns, the
+   weighting sliders and the podium stats are all rendered from the metadata
+   each telescope declares server-side. */
+
+const $ = (s) => document.querySelector(s);
+
+/* Every telescope name/tagline/caveat/event headline/roadmap note below is
+   free-form prose written server-side (roadmap.py, observatories/*.py) and
+   gets interpolated straight into innerHTML — with no escaping, a stray "<"
+   in that prose (e.g. "verified against the homepage's own <title> tag")
+   is parsed as real markup. <title> specifically has "consume everything
+   until literal </title>" parsing rules, which silently ate the rest of
+   the ROADMAP tab's content, confirmed live. Not a security boundary
+   (nothing here is attacker-controlled), just correctness -- but the same
+   fix either way. */
+function esc(s) {
+  if (s === null || s === undefined) return "";
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
 
 let state = {
-  models: [],
+  scopes: [],          // catalog
+  slug: null,          // active telescope
+  meta: null,          // active telescope metadata
+  rows: [],
+  panels: [],
   weights: {},
   sort: { key: "rank", dir: 1 },
   search: "",
   scoredOnly: false,
   hideNoise: true,
+  watchedOnly: false,
+  feedWatchedOnly: false,
 };
 
-const $ = (s) => document.querySelector(s);
+/* ── watchlist — per-entity, per telescope, persisted in localStorage ──
+   Deliberately client-side, same reasoning as saved views: there's no user
+   account for a server to attach this to, and it's meaningless without the
+   browser that set it. "Alerts" here means surfacing what's already in the
+   merged event feed for entities you've starred, not a push mechanism —
+   there's no delivery channel to push through when nobody's looking. */
+const WATCHLIST_KEY = "observatory_watchlist";
 
-function fmt(n) {
-  if (n === null || n === undefined) return "—";
-  if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
-  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
-  return n.toLocaleString();
+function loadWatchlist() {
+  try {
+    return JSON.parse(localStorage.getItem(WATCHLIST_KEY) || "{}");
+  } catch {
+    return {};
+  }
 }
-function price(p) {
-  if (p === null || p === undefined) return "—";
+function saveWatchlist(all) {
+  try {
+    localStorage.setItem(WATCHLIST_KEY, JSON.stringify(all));
+  } catch {
+    /* storage full or disabled — watches just won't persist */
+  }
+}
+function isWatched(slug, key) {
+  const all = loadWatchlist();
+  return !!(slug && key && (all[slug] || []).includes(key));
+}
+function toggleWatch(slug, key) {
+  if (!slug || !key) return;
+  const all = loadWatchlist();
+  const list = all[slug] || [];
+  const i = list.indexOf(key);
+  if (i >= 0) list.splice(i, 1);
+  else list.push(key);
+  all[slug] = list;
+  saveWatchlist(all);
+}
+
+/* ── formatters ─────────────────────────────── */
+function fmtNum(n) {
+  if (n === null || n === undefined || n === "") return "<span class=dim>—</span>";
+  if (typeof n !== "number") return String(n);
+  return (Math.round(n * 100) / 100).toLocaleString();
+}
+function fmtInt(n) {
+  if (n === null || n === undefined) return "<span class=dim>—</span>";
+  if (Math.abs(n) >= 1e9) return (n / 1e9).toFixed(1) + "B";
+  if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(1) + "K";
+  return Math.round(n).toLocaleString();
+}
+function fmtMoney(n) {
+  if (n === null || n === undefined) return "<span class=dim>—</span>";
+  const a = Math.abs(n);
+  if (a >= 1e9) return "$" + (n / 1e9).toFixed(1) + "B";
+  if (a >= 1e6) return "$" + (n / 1e6).toFixed(1) + "M";
+  if (a >= 1e3) return "$" + (n / 1e3).toFixed(1) + "K";
+  return "$" + Math.round(n).toLocaleString();
+}
+function fmtPrice(p) {
+  if (p === null || p === undefined) return "<span class=dim>—</span>";
   return "$" + (p * 1e6).toFixed(2);
+}
+function fmtPct(n) {
+  if (n === null || n === undefined) return "<span class=dim>—</span>";
+  return n.toFixed(1) + "%";
+}
+function fmtSigned(n) {
+  if (n === null || n === undefined) return "<span class=dim>—</span>";
+  const cls = n > 0 ? "up" : n < 0 ? "down" : "";
+  return `<span class="${cls}">${n > 0 ? "+" : ""}${n.toFixed(2)}</span>`;
+}
+function fmtText(s) {
+  if (s === null || s === undefined || s === "") return "<span class=dim>—</span>";
+  return esc(s);
+}
+function fmtUrl(u) {
+  if (!u) return "<span class=dim>—</span>";
+  return `<a href="https://${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`;
+}
+const FORMATTERS = {
+  num: fmtNum, int: fmtInt, money: fmtMoney, price: fmtPrice,
+  pct: fmtPct, signed: fmtSigned, text: fmtText, date: fmtText, url: fmtUrl,
+  score: (n) => (n === null || n === undefined ? "—" : n),
+  rank: (n) => (n === null || n === undefined ? "<span class=dim>—</span>" : "#" + n),
+};
+function cell(row, col) {
+  return (FORMATTERS[col.fmt] || fmtNum)(row[col.field]);
 }
 function ago(s) {
   if (s === null || s === undefined) return "—";
-  if (s < 60) return s + "s";
+  if (s < 60) return Math.round(s) + "s";
   if (s < 3600) return Math.round(s / 60) + "m";
-  return Math.round(s / 3600) + "h";
+  if (s < 86400) return Math.round(s / 3600) + "h";
+  return Math.round(s / 86400) + "d";
 }
 
+/* ── score calculation tooltip ─────────────── */
+const tip = document.getElementById("calc-tip");
+let tipKey = null;
+
+function fmtRaw(field, value) {
+  const col = state.meta && state.meta.columns.find((c) => c.field === field);
+  return (FORMATTERS[(col && col.fmt) || "num"] || fmtNum)(value);
+}
+
+function rowByKey(key) {
+  return state.rows.find((r) => String(r.key) === key);
+}
+
+function buildTip(row) {
+  const breakdown = row.score_breakdown || {};
+  const entries = Object.values(breakdown).sort((a, b) => b.points - a.points);
+  const rowsHtml = entries
+    .map(
+      (b) => `<div class="ct-row">
+        <span class="ct-label">${esc(b.label)}</span>
+        <span class="ct-raw">${fmtRaw(b.field, b.raw)}</span>
+        <span class="ct-weight">×${b.weight}</span>
+        <span class="ct-pts">${b.points.toFixed(1)}</span>
+      </div>`
+    )
+    .join("");
+  let dampenNote = "";
+  if (row.dampened) {
+    const meta = state.meta || {};
+    const qualityLabels = (meta.signals || [])
+      .filter((s) => (meta.quality_signals || []).includes(s.key))
+      .map((s) => esc(s.label));
+    dampenNote = `<div class="ct-formula"><span class="ct-dampen">⚠ ×${meta.dampen}</span> — no independent evidence present (needs one of: ${qualityLabels.join(", ") || "a quality signal"}).</div>`;
+  }
+  return `
+    <div class="ct-head">
+      <span class="ct-name">${esc(row.name) || ""}</span>
+      <span class="ct-score">${row.score ?? "—"}<span>/100</span></span>
+    </div>
+    <div class="ct-colheads"><span>SIGNAL</span><span>RAW</span><span>WEIGHT</span><span>PTS</span></div>
+    ${rowsHtml || '<div class="ct-row"><span class="ct-label dim">no scored signals</span></div>'}
+    <div class="ct-formula">SCORE = Σ(NORMALISED × WEIGHT) ÷ Σ(WEIGHT)${row.dampened ? " × DAMPEN" : ""}</div>
+    ${dampenNote}`;
+}
+
+function positionTip(x, y) {
+  const pad = 16;
+  const w = tip.offsetWidth || 300;
+  const h = tip.offsetHeight || 120;
+  let left = x + pad;
+  let top = y + pad;
+  if (left + w > window.innerWidth - 8) left = x - w - pad;
+  if (top + h > window.innerHeight - 8) top = y - h - pad;
+  tip.style.left = Math.max(8, left) + "px";
+  tip.style.top = Math.max(8, top) + "px";
+}
+
+function hideTip() {
+  tipKey = null;
+  tip.classList.remove("show");
+  tip.hidden = true;
+}
+
+// Shared by both trigger paths below: builds and shows the tip for `key`,
+// returning false (and hiding it) if that row has nothing to show. Neither
+// caller repositions here -- a mouse move and a keyboard focus land at
+// different coordinates, so each positions after this returns.
+function showTipFor(key) {
+  if (key === tipKey) return true;
+  const row = rowByKey(key);
+  if (!row || !row.score_breakdown) { hideTip(); return false; }
+  tipKey = key;
+  tip.innerHTML = buildTip(row);
+  tip.hidden = false;
+  requestAnimationFrame(() => tip.classList.add("show"));
+  return true;
+}
+
+function wireTipDelegation(container) {
+  container.addEventListener("mousemove", (e) => {
+    const el = e.target.closest("[data-key]");
+    if (!el) {
+      if (tipKey !== null) hideTip();
+      return;
+    }
+    if (showTipFor(el.dataset.key)) positionTip(e.clientX, e.clientY);
+  });
+  container.addEventListener("mouseleave", hideTip);
+  // Mousemove has no keyboard equivalent, so a Tab-only user landing on the
+  // exact same [data-key] cells (the score column, the podium score) would
+  // otherwise never see this tooltip at all -- the only place in the whole
+  // dashboard that shows a signal-by-signal score breakdown. focusin/
+  // focusout (unlike plain focus/blur) bubble, so they delegate the same
+  // way mousemove/mouseleave already do above. Positioned from the
+  // focused element's own rect instead of a cursor position, reusing
+  // positionTip()'s existing viewport-clamping unchanged.
+  container.addEventListener("focusin", (e) => {
+    const el = e.target.closest("[data-key]");
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (showTipFor(el.dataset.key)) positionTip(r.left, r.bottom);
+  });
+  container.addEventListener("focusout", (e) => {
+    if (e.target.closest("[data-key]")) hideTip();
+  });
+}
+wireTipDelegation($("#rows"));
+wireTipDelegation($("#podium"));
+
+$("#rows").addEventListener("click", (e) => {
+  const cell = e.target.closest(".watch-cell");
+  if (!cell) return;
+  toggleWatch(state.slug, cell.dataset.key);
+  render();
+});
+// The watch star is a <td>, not a native button -- role="button"/tabindex
+// above make it focusable and announce it to a screen reader, but only a
+// real <button>/<a> gets Enter/Space activation for free. Re-dispatching a
+// click on the already-focused element reuses the handler above instead of
+// duplicating the toggle logic here.
+$("#rows").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const cell = e.target.closest(".watch-cell");
+  if (!cell) return;
+  e.preventDefault();
+  cell.click();
+});
+
+/* ── observatory catalog + switcher ─────────── */
+async function loadCatalog() {
+  const r = await fetch("/api/observatory");
+  const data = await r.json();
+  state.scopes = data.telescopes;
+  renderStrip();
+  renderScopeGrid();
+  const enabled = state.scopes.filter((s) => s.enabled);
+  if (!state.slug || !enabled.some((s) => s.slug === state.slug)) {
+    state.slug = enabled.length ? enabled[0].slug : null;
+  }
+  return enabled;
+}
+
+function renderStrip() {
+  $("#scope-strip").innerHTML = state.scopes
+    .map(
+      (s) => `<button class="scope-chip ${s.enabled ? "" : "off"} ${
+        s.slug === state.slug ? "active" : ""
+      }" data-slug="${s.slug}" ${s.enabled ? "" : "disabled"}
+        title="${s.enabled ? esc(s.tagline) : "DISABLED — enable under TELESCOPES"}">
+        <span class="g">${s.glyph}</span>${esc(s.name)}
+        <span class="dom">${esc(s.domain)}</span>
+      </button>`
+    )
+    .join("");
+  $("#scope-strip").querySelectorAll(".scope-chip").forEach((el) => {
+    el.addEventListener("click", () => {
+      if (el.disabled) return;
+      state.slug = el.dataset.slug;
+      state.weights = {};
+      state.sort = { key: "rank", dir: 1 };
+      panelSort = {};   // panel indices are only meaningful within one telescope
+      renderStrip();
+      switchView("board");
+      load(false);
+    });
+  });
+}
+
+function renderScopeGrid() {
+  $("#scope-grid").innerHTML = state.scopes
+    .map(
+      (s) => `<div class="scope-card ${s.enabled ? "on" : ""}">
+        <div class="sc-head">
+          <span class="sc-glyph">${s.glyph}</span>
+          <span class="sc-name">${esc(s.name)}</span>
+          <label class="switch">
+            <input type="checkbox" data-toggle="${s.slug}" ${s.enabled ? "checked" : ""}>
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="sc-domain">${esc(s.domain)} · ${esc(s.entity_label)}</div>
+        <div class="sc-tagline">${esc(s.tagline)}</div>
+        <div class="sc-sources">${esc(s.sources_label) || ""}</div>
+        ${s.caveat ? `<div class="sc-caveat">${esc(s.caveat)}</div>` : ""}
+        <div class="sc-poll">SWEEPS EVERY ${Math.round(s.poll_seconds / 3600)}H</div>
+      </div>`
+    )
+    .join("");
+  $("#scope-grid").querySelectorAll("input[data-toggle]").forEach((el) => {
+    el.addEventListener("change", async () => {
+      const slug = el.dataset.toggle;
+      el.disabled = true;
+      try {
+        await fetch(`/api/observatory/${slug}/toggle`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: el.checked }),
+        });
+        await loadCatalog();
+        if (state.slug) load(false);
+      } finally {
+        el.disabled = false;
+      }
+    });
+  });
+}
+
+/* ── board ──────────────────────────────────── */
 async function load(refresh = false) {
+  if (!state.slug) {
+    $("#rows").innerHTML = `<tr><td class="loading">NO TELESCOPE ENABLED — TURN ONE ON UNDER TELESCOPES</td></tr>`;
+    return;
+  }
+  // A forced refresh can take minutes on a telescope with a cold cache
+  // (Kepler's paced per-issuer lookups, a Holmdel sweep hitting arXiv's
+  // throttle). Switching to a different, already-cached telescope while
+  // that request is still in flight starts a second, independent load()
+  // -- with no guard, whichever fetch happens to resolve last would win
+  // and silently revert the board back to the wrong telescope's stale
+  // data, even though switching away was the more recent user action.
+  const requestedSlug = state.slug;
   $("#refresh").disabled = true;
-  $("#rows").innerHTML = `<tr><td colspan="12" class="loading">FETCHING LIVE INDEX</td></tr>`;
+  const cols = state.meta ? state.meta.columns.length + 1 : 8;
+  $("#rows").innerHTML = `<tr><td colspan="${cols}" class="loading">OBSERVING</td></tr>`;
   const wq = Object.entries(state.weights).map(([k, v]) => `${k}:${v}`).join(",");
-  const url = `/api/models?weights=${encodeURIComponent(wq)}${refresh ? "&refresh=1" : ""}`;
+  const url = `/api/telescope/${requestedSlug}?weights=${encodeURIComponent(wq)}${
+    refresh ? "&refresh=1" : ""
+  }`;
   try {
     const r = await fetch(url);
     const data = await r.json();
+    if (state.slug !== requestedSlug) return;   // superseded by a later switch
     if (data.error) {
-      $("#rows").innerHTML = `<tr><td colspan="12" class="loading">⚠ ${data.error}</td></tr>`;
+      $("#rows").innerHTML = `<tr><td colspan="${cols}" class="loading">⚠ ${esc(data.error)}</td></tr>`;
       return;
     }
-    state.models = data.models;
+    state.meta = data.telescope;
+    state.rows = data.rows;
+    state.panels = data.panels || [];
     if (!Object.keys(state.weights).length) {
       state.weights = data.weights;
       renderWeights();
     }
-    const a = data.ages || {};
-    $("#freshness").textContent =
-      `HF ${ago(a.huggingface)} · OR ${ago(a.openrouter)} · ARENA ${ago(a.lmarena)}`;
-    $("#status").textContent =
-      `${data.count} MODELS INDEXED · SCORE = WEIGHTED BLEND OF INTELLIGENCE · CODING · AGENTIC · ARENA · USAGE · DOWNLOADS · LIKES · PRICE`;
+    applyIdentity(data);
+    renderHead();
     render();
+    renderPanel();
+    renderViews();
     loadFeed();
-    renderFit();
   } catch (e) {
-    $("#rows").innerHTML = `<tr><td colspan="12" class="loading">⚠ ${e}</td></tr>`;
+    if (state.slug !== requestedSlug) return;
+    $("#rows").innerHTML = `<tr><td colspan="${cols}" class="loading">⚠ ${esc(e)}</td></tr>`;
   } finally {
-    $("#refresh").disabled = false;
+    if (state.slug === requestedSlug) $("#refresh").disabled = false;
   }
 }
 
-const ETYPE_LABEL = {
-  new_leader: "NEW #1",
-  new_model: "NEW MODEL",
-  big_climber: "CLIMBER",
-  price_drop: "PRICE DROP",
-};
+function applyIdentity(data) {
+  const m = data.telescope;
+  $("#wordmark").textContent = m.name;
+  $("#tagline").textContent = `${m.tagline} · ${m.sources_label || ""}`;
+  document.title = `${m.name} — ${m.tagline}`;
+  $("#podium-label").textContent = `TOP RANKED · ${m.entity_label}`;
+  $("#table-label").textContent = `FULL INDEX · ${m.entity_label}`;
+  const cav = $("#caveat");
+  if (m.caveat) {
+    cav.innerHTML = `<b>WHAT THIS INSTRUMENT CAN'T SEE —</b> ${esc(m.caveat)}`;
+    cav.hidden = false;
+  } else cav.hidden = true;
+  const ages = Object.entries(data.ages || {})
+    .map(([k, v]) => `${k.toUpperCase()} ${ago(v)}`)
+    .join(" · ");
+  $("#freshness").textContent = ages || "—";
+}
 
-async function loadFeed() {
-  try {
-    const r = await fetch("/api/whats-new?limit=12");
-    const data = await r.json();
-    const el = $("#feed");
-    if (!data.events || !data.events.length) {
-      const swept = data.snapshots > 0;
-      el.innerHTML = `<div class="feed-empty">${
-        swept
-          ? "No changes detected since the last sweep — the index is steady."
-          : "Calibrating — Hubble takes its first reading on the next sweep."
-      }</div>`;
-      return;
-    }
-    el.innerHTML = data.events
-      .map((e) => {
-        const link = e.key && e.key.includes("/")
-          ? `https://huggingface.co/${e.key}`
-          : null;
-        const head = link
-          ? e.headline.replace(e.name, `<a href="${link}" target="_blank" rel="noopener">${e.name}</a>`)
-          : e.headline;
-        return `<div class="feed-item t-${e.type}">
-          <span class="dot"></span>
-          <span class="etype">${ETYPE_LABEL[e.type] || e.type}</span>
-          <span class="ehead">${head}</span>
-          <span class="etime">${ago(Math.round(Date.now() / 1000 - e.ts))}</span>
-        </div>`;
-      })
+function renderHead() {
+  const cols = state.meta.columns;
+  $("#thead-row").innerHTML =
+    `<th class="watch-th"></th><th class="left" data-sort="rank" role="button" tabindex="0">#</th>` +
+    cols
+      .map(
+        (c) =>
+          `<th class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}" data-sort="${c.field}" role="button" tabindex="0">${esc(c.label)}</th>`
+      )
       .join("");
-  } catch (e) {
-    $("#feed").innerHTML = `<div class="feed-empty">⚠ ${e}</div>`;
-  }
+  // A <th> isn't natively activatable -- the click handler carries the
+  // actual sort logic, and the keydown handler below just reuses it via a
+  // shared function instead of re-implementing it for Enter/Space.
+  $("#thead-row").querySelectorAll("th[data-sort]").forEach((th) => {
+    const activate = () => {
+      const key = th.dataset.sort;
+      if (state.sort.key === key) state.sort.dir *= -1;
+      else state.sort = { key, dir: key === "rank" || key === "name" ? 1 : -1 };
+      render();
+    };
+    th.addEventListener("click", activate);
+    th.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      activate();
+    });
+  });
 }
 
 function renderWeights() {
-  $("#weights").innerHTML = Object.keys(WEIGHT_LABELS)
-    .map((k) => {
-      const v = state.weights[k] ?? 0;
+  const signals = state.meta ? state.meta.signals : [];
+  $("#weights").innerHTML = signals
+    .map((s) => {
+      const v = state.weights[s.key] ?? 0;
       return `<div class="weight">
-        <label>${WEIGHT_LABELS[k]} <b id="wv-${k}">${v}</b></label>
-        <input type="range" min="0" max="50" value="${v}" data-w="${k}">
+        <label>${esc(s.label)} <b id="wv-${s.key}">${v}</b></label>
+        <input type="range" min="0" max="50" step="0.1" value="${v}" data-w="${s.key}">
       </div>`;
     })
     .join("");
   $("#weights").querySelectorAll("input[type=range]").forEach((el) => {
     el.addEventListener("input", () => {
-      const k = el.dataset.w;
-      state.weights[k] = +el.value;
-      $("#wv-" + k).textContent = el.value;
+      state.weights[el.dataset.w] = +el.value;
+      $("#wv-" + el.dataset.w).textContent = el.value;
     });
     el.addEventListener("change", () => load(false));
   });
 }
 
+/* ── saved views — a named weight configuration, per telescope ───────
+   Persisted client-side (localStorage): nothing here is per-user data the
+   server needs to know about, and a slider config is meaningless without
+   the browser that set it, so there's no reason to round-trip it through
+   the API. */
+const VIEWS_KEY = "observatory_views";
+
+function loadAllViews() {
+  try {
+    return JSON.parse(localStorage.getItem(VIEWS_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+function saveAllViews(all) {
+  try {
+    localStorage.setItem(VIEWS_KEY, JSON.stringify(all));
+  } catch {
+    /* storage full or disabled — saved views just won't persist */
+  }
+}
+function viewsForScope() {
+  return loadAllViews()[state.slug] || [];
+}
+function renderViews() {
+  const views = viewsForScope();
+  $("#views-list").innerHTML =
+    views
+      .map(
+        (v, i) => `<span class="view-chip" data-i="${i}">
+          <b data-i="${i}" role="button" tabindex="0" title="Apply this view" aria-label="Apply view ${esc(v.name)}">${esc(v.name)}</b>
+          <span class="del" data-i="${i}" role="button" tabindex="0" title="Delete this view" aria-label="Delete view ${esc(v.name)}">×</span>
+        </span>`
+      )
+      .join("") || `<span class="views-empty">NO SAVED VIEWS YET</span>`;
+  // Neither <b> nor <span> is a native button -- same shared-handler
+  // pattern as the sort headers above, so Enter/Space reuses the exact
+  // logic the click listener already runs instead of duplicating it.
+  $("#views-list").querySelectorAll("b[data-i]").forEach((el) => {
+    const activate = () => applyView(views[+el.dataset.i]);
+    el.addEventListener("click", activate);
+    el.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      activate();
+    });
+  });
+  $("#views-list").querySelectorAll(".del").forEach((el) => {
+    const activate = (e) => {
+      e.stopPropagation();
+      deleteView(+el.dataset.i);
+    };
+    el.addEventListener("click", activate);
+    el.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      activate(e);
+    });
+  });
+}
+function applyView(view) {
+  if (!view) return;
+  state.weights = { ...view.weights };
+  renderWeights();
+  load(false);
+}
+function deleteView(i) {
+  const all = loadAllViews();
+  const views = all[state.slug] || [];
+  views.splice(i, 1);
+  all[state.slug] = views;
+  saveAllViews(all);
+  renderViews();
+}
+function saveCurrentView() {
+  if (!state.slug || !Object.keys(state.weights).length) return;
+  const name = (prompt("Name this weighting?") || "").trim().slice(0, 40);
+  if (!name) return;
+  const all = loadAllViews();
+  const views = all[state.slug] || [];
+  const entry = { name, weights: { ...state.weights } };
+  const existing = views.findIndex((v) => v.name === name);
+  if (existing >= 0) views[existing] = entry;
+  else views.push(entry);
+  all[state.slug] = views;
+  saveAllViews(all);
+  renderViews();
+}
+
 function filtered() {
-  let rows = state.models;
-  if (state.hideNoise) rows = rows.filter((m) => !m.noise);
+  let rows = state.rows;
+  if (state.hideNoise) rows = rows.filter((r) => !r.noise);
   if (state.search) {
     const q = state.search.toLowerCase();
-    rows = rows.filter(
-      (m) =>
-        (m.name || "").toLowerCase().includes(q) ||
-        (m.hf_id || "").toLowerCase().includes(q)
+    rows = rows.filter((r) =>
+      Object.values(r).some(
+        (v) => typeof v === "string" && v.toLowerCase().includes(q)
+      )
     );
   }
-  if (state.scoredOnly) rows = rows.filter((m) => m.score !== null);
+  if (state.scoredOnly) rows = rows.filter((r) => r.score !== null);
+  if (state.watchedOnly) rows = rows.filter((r) => isWatched(state.slug, r.key));
   const { key, dir } = state.sort;
-  rows = [...rows].sort((a, b) => {
+  return [...rows].sort((a, b) => {
     let av = a[key], bv = b[key];
-    if (typeof av === "string") return av.localeCompare(bv) * dir;
+    if (typeof av === "string" || typeof bv === "string")
+      return String(av ?? "").localeCompare(String(bv ?? "")) * dir;
     av = av ?? -Infinity; bv = bv ?? -Infinity;
     return (av - bv) * dir;
   });
-  return rows;
 }
 
 function podium(rows) {
-  const top = rows.filter((m) => m.score !== null).slice(0, 3);
-  const maxScore = Math.max(...top.map((m) => m.score), 1);
+  const top = rows.filter((r) => r.score !== null).slice(0, 3);
+  const maxScore = Math.max(...top.map((r) => r.score), 1);
   const place = ["01 · GOLD", "02 · SILVER", "03 · BRONZE"];
+  // Podium stats = the first three non-name columns this telescope declares.
+  const statCols = state.meta.columns
+    .filter((c) => c.field !== "name" && c.field !== "score")
+    .slice(0, 3);
   $("#podium").innerHTML = top
-    .map((m, i) => {
-      const link = m.hf_id
-        ? `https://huggingface.co/${m.hf_id}`
-        : `https://openrouter.ai/${m.or_id}`;
-      const stats = [
-        m.usage_rank ? `USAGE <b>#${m.usage_rank}</b>` : null,
-        m.intelligence_index ? `INTL <b>${m.intelligence_index}</b>` : null,
-        m.arena_elo ? `ARENA <b>${Math.round(m.arena_elo)}</b>` : null,
-      ].filter(Boolean).join("&nbsp;&nbsp;·&nbsp;&nbsp;");
-      const pct = (m.score / maxScore) * 100;
+    .map((r, i) => {
+      const stats = statCols
+        .map((c) => `${esc(c.label)} <b>${cell(r, c)}</b>`)
+        .join("&nbsp;&nbsp;·&nbsp;&nbsp;");
+      const pct = (r.score / maxScore) * 100;
+      const name = r.link
+        ? `<a href="${r.link}" target="_blank" rel="noopener">${esc(r.name)}</a>`
+        : esc(r.name);
       return `<div class="pod rank-${i + 1}">
         <div class="pod-place">${place[i]}</div>
-        <div class="pod-score">${m.score}<span class="pod-score-x">/100</span></div>
+        <div class="pod-score" data-key="${r.key}" tabindex="0" aria-describedby="calc-tip">${r.score}<span class="pod-score-x">/100</span></div>
         <div class="pod-meter"><i style="width:${pct}%"></i></div>
-        <div class="pod-name"><a href="${link}" target="_blank" rel="noopener">${m.name}</a></div>
+        <div class="pod-name">${name}</div>
         <div class="pod-stats">${stats || "—"}</div>
       </div>`;
     })
@@ -182,170 +601,310 @@ function podium(rows) {
 
 function render() {
   const rows = filtered();
+  const cols = state.meta.columns;
+  const label = state.meta.entity_label;
   $("#status").textContent =
-    `${rows.length} / ${state.models.length} MODELS SHOWN · SCORE = WEIGHTED BLEND OF INTELLIGENCE · CODING · AGENTIC · ARENA · USAGE · DOWNLOADS · LIKES · PRICE`;
+    `${rows.length} / ${state.rows.length} ${label} SHOWN · SCORE = WEIGHTED BLEND OF ` +
+    state.meta.signals.map((s) => s.label).join(" · ");
   podium(rows);
-  const maxScore = Math.max(...rows.map((m) => m.score || 0), 1);
+  const maxScore = Math.max(...rows.map((r) => r.score || 0), 1);
   $("#rows").innerHTML = rows
-    .map((m) => {
-      const link = m.hf_id
-        ? `https://huggingface.co/${m.hf_id}`
-        : `https://openrouter.ai/${m.or_id}`;
-      const badges =
-        (m.sources.includes("huggingface") ? `<span class="badge">HF</span>` : "") +
-        (m.sources.includes("openrouter") ? `<span class="badge">OR</span>` : "") +
-        (m.intelligence_index ? `<span class="badge">AA</span>` : "");
-      const pct = m.score ? (m.score / maxScore) * 100 : 0;
-      return `<tr class="${m.rank === 1 ? "top1" : ""}">
-        <td class="rankcell">${String(m.rank).padStart(2, "0")}</td>
-        <td class="left name"><a href="${link}" target="_blank" rel="noopener">${m.name}</a></td>
-        <td class="scorecell scorebar">${m.score ?? "—"}<i style="width:${pct}%"></i></td>
-        <td>${m.intelligence_index ?? "<span class=dim>—</span>"}</td>
-        <td>${m.coding_index ?? "<span class=dim>—</span>"}</td>
-        <td>${m.agentic_index ?? "<span class=dim>—</span>"}</td>
-        <td>${m.arena_elo ? Math.round(m.arena_elo) : "<span class=dim>—</span>"}</td>
-        <td>${m.usage_rank ? "#" + m.usage_rank : "<span class=dim>—</span>"}</td>
-        <td>${fmt(m.downloads)}</td>
-        <td>${fmt(m.likes)}</td>
-        <td>${price(m.price_completion)}</td>
-        <td class="left">${badges}</td>
-      </tr>`;
+    .map((r) => {
+      const tds = cols
+        .map((c) => {
+          if (c.field === "name") {
+            const inner = r.link
+              ? `<a href="${r.link}" target="_blank" rel="noopener">${esc(r.name)}</a>`
+              : esc(r.name);
+            return `<td class="left name">${inner}${
+              r.stealth ? ' <span class="badge">STEALTH</span>' : ""
+            }</td>`;
+          }
+          if (c.field === "score") {
+            const pct = r.score ? (r.score / maxScore) * 100 : 0;
+            return `<td class="scorecell scorebar" data-key="${r.key}" tabindex="0" aria-describedby="calc-tip">${r.score ?? "—"}<i style="width:${pct}%"></i></td>`;
+          }
+          return `<td class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}">${cell(r, c)}</td>`;
+        })
+        .join("");
+      const watched = isWatched(state.slug, r.key);
+      return `<tr class="${r.rank === 1 ? "top1" : ""}">
+        <td class="watch-cell${watched ? " on" : ""}" data-key="${r.key}" role="button" tabindex="0" aria-pressed="${watched}" aria-label="${watched ? "Unwatch" : "Watch"} ${esc(r.name)}">${watched ? "★" : "☆"}</td>
+        <td class="rankcell left">${String(r.rank).padStart(2, "0")}</td>${tds}</tr>`;
     })
     .join("");
 }
 
-/* ── hardware fit ──────────────────────────── */
-const GPU_PRESETS = [
-  { label: "Custom", vram: null },
-  { label: "RTX 5090 · 32GB", vram: 32 },
-  { label: "RTX 4090 / 3090 · 24GB", vram: 24 },
-  { label: "RTX 5080 / 4080 · 16GB", vram: 16 },
-  { label: "RTX 4070 Ti / 3060 · 12GB", vram: 12 },
-  { label: "RTX 4060 / 3050 · 8GB", vram: 8 },
-  { label: "Apple M-series (unified)", vram: 0, unified: true },
-  { label: "A100 · 40GB", vram: 40 },
-  { label: "A100 / H100 · 80GB", vram: 80 },
-  { label: "CPU only", vram: 0 },
-];
-const QUANT_BYTES = { q4: 0.55, q8: 1.0, fp16: 2.0 };
-const QUANT_LABEL = { q4: "Q4", q8: "Q8", fp16: "FP16" };
+// Per-panel sort state, keyed by panel index — a telescope can have more
+// than one panel (Jackson has two), each sorted independently. Undefined
+// means "whatever order the backend already scored/sorted it in", which is
+// itself meaningful (a real blended score, not just one raw column) and
+// worth keeping as the default rather than forcing a click first.
+let panelSort = {};
 
-function estVram(paramsB, quant) {
-  // weights + ~20% for KV cache / activations / runtime
-  return paramsB * QUANT_BYTES[quant] * 1.2;
-}
-
-function initFitControls() {
-  const sel = $("#fit-gpu");
-  sel.innerHTML = GPU_PRESETS.map((g, i) => `<option value="${i}">${g.label}</option>`).join("");
-  sel.value = "2"; // default 24GB
-  sel.addEventListener("change", () => {
-    const g = GPU_PRESETS[+sel.value];
-    if (g.vram !== null && !g.unified) $("#fit-vram").value = g.vram;
-    if (g.unified) $("#fit-vram").value = 0;
-    renderFit();
+function sortPanelRows(rows, sort) {
+  if (!sort) return rows;
+  const { key, dir } = sort;
+  return [...rows].sort((a, b) => {
+    let av = a[key], bv = b[key];
+    if (typeof av === "string" || typeof bv === "string")
+      return String(av ?? "").localeCompare(String(bv ?? "")) * dir;
+    av = av ?? -Infinity; bv = bv ?? -Infinity;
+    return (av - bv) * dir;
   });
-  ["fit-vram", "fit-ram", "fit-quant", "fit-use"].forEach((id) =>
-    $("#" + id).addEventListener("input", renderFit)
-  );
 }
 
-function renderFit() {
-  const vram = +$("#fit-vram").value || 0;
-  const ram = +$("#fit-ram").value || 0;
-  const quant = $("#fit-quant").value;
-  const useKey = $("#fit-use").value;
-  const preset = GPU_PRESETS[+$("#fit-gpu").value];
-  const unified = preset && preset.unified;
-  // On unified-memory (Apple), usable "VRAM" ≈ most of system RAM.
-  const budget = unified ? ram * 0.75 : vram;
+// Panel rows have no fixed shape (WHALE MOVES' free-text fields are
+// "fund"/"security", not "name" like the main board), so there's no single
+// field to read a human-readable label from for a watch star's aria-label
+// -- built generically from whichever fields the panel itself already
+// declares as text, the same "no hardcoded key" approach test_live.py's
+// entity-leak check uses for the same reason.
+function panelRowLabel(p, r) {
+  return p.columns
+    .filter((c) => c.fmt === "text" || c.fmt === "url")
+    .map((c) => r[c.field])
+    .filter(Boolean)
+    .join(" ") || "row";
+}
 
-  const candidates = state.models
-    .filter((m) => m.local && m.params_b && !m.noise)
-    .map((m) => {
-      const need = estVram(m.params_b, quant);
-      let fit, note;
-      if (need <= budget) { fit = "fits"; note = "runs on GPU"; }
-      else if (need <= budget * 1.12) { fit = "tight"; note = "tight — trim context"; }
-      else if (m.params_b * QUANT_BYTES[quant] <= ram) { fit = "offload"; note = "CPU / partial offload (slower)"; }
-      else { fit = "toobig"; note = "exceeds RAM at this quant"; }
-      return { ...m, need, fit, note };
-    });
-
-  const runnable = candidates.filter((m) => m.fit === "fits" || m.fit === "tight");
-  const metric = (m) => (m[useKey] != null ? m[useKey] : -1);
-  runnable.sort((a, b) => metric(b) - metric(a) || (b.score || 0) - (a.score || 0));
-
-  // summary + best pick
-  const useLabel = $("#fit-use").selectedOptions[0].textContent;
-  const best = runnable[0];
-  if (best) {
-    const link = `https://huggingface.co/${best.hf_id}`;
-    $("#fit-summary").innerHTML =
-      `BEST PICK FOR ${budget.toFixed(0)}GB ${unified ? "UNIFIED" : "VRAM"} @ ${QUANT_LABEL[quant]} · OPTIMISING ${useLabel}<br>
-       <span class="pick"><a href="${link}" target="_blank" rel="noopener">${best.name}</a></span><br>
-       <span class="muted2">${best.params_b}B params · ~${best.need.toFixed(1)}GB to load · score <b>${best.score ?? "—"}</b>${
-        best.intelligence_index ? ` · intl <b>${best.intelligence_index}</b>` : ""
-      }${best.coding_index ? ` · code <b>${best.coding_index}</b>` : ""}</span>`;
-  } else {
-    $("#fit-summary").innerHTML =
-      `<span class="muted2">Nothing fits ${budget.toFixed(0)}GB at ${QUANT_LABEL[quant]}. Try a smaller quant, or a model under ~${(budget / (QUANT_BYTES[quant] * 1.2)).toFixed(0)}B params.</span>`;
-  }
-
-  // table: runnable first (ranked), then a few near-misses for context
-  const nearMiss = candidates
-    .filter((m) => m.fit === "offload" || m.fit === "toobig")
-    .sort((a, b) => (b.score || 0) - (a.score || 0))
-    .slice(0, 8);
-  const rows = [...runnable, ...nearMiss];
-
-  $("#fit-rows").innerHTML = rows
-    .map((m) => {
-      const link = `https://huggingface.co/${m.hf_id}`;
-      const badge = { fits: "FITS", tight: "TIGHT", offload: "OFFLOAD", toobig: "TOO BIG" }[m.fit];
-      return `<tr>
-        <td class="left"><span class="fit-badge fit-${m.fit}">${badge}</span></td>
-        <td class="left name"><a href="${link}" target="_blank" rel="noopener">${m.name}</a></td>
-        <td>${m.params_b}B</td>
-        <td>${m.need.toFixed(1)}GB</td>
-        <td class="scorecell">${m.score ?? "—"}</td>
-        <td>${m.intelligence_index ?? "—"}</td>
-        <td>${m.coding_index ?? "—"}</td>
-        <td>${m.agentic_index ?? "—"}</td>
-        <td class="left dim">${m.note}</td>
-      </tr>`;
+function renderPanel() {
+  const panels = state.panels || [];
+  $("#panels-container").innerHTML = panels
+    .map((p, i) => {
+      const rows = sortPanelRows(p.rows, panelSort[i]);
+      // Only panels whose rows carry a stable "key" (currently WHALE MOVES
+      // and CAPABILITY AREAS, both of which now fire real feed events) can
+      // be watched -- panels like SECTOR HEAT/UNMAPPED that are pure
+      // cross-telescope reads with no event of their own don't get a star
+      // column at all, rather than offering a star that can never actually
+      // match anything in the feed.
+      const watchable = rows.length > 0 && rows[0].key !== undefined;
+      const head =
+        (watchable ? `<th class="watch-th"></th>` : "") +
+        p.columns
+          .map(
+            (c) =>
+              `<th class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}" data-panel="${i}" data-sort="${c.field}" role="button" tabindex="0">${esc(c.label)}</th>`
+          )
+          .join("");
+      const body = rows
+        .map((r) => {
+          const watched = isWatched(state.slug, r.key);
+          const star = watchable
+            ? `<td class="watch-cell${watched ? " on" : ""}" data-panel-key="${esc(r.key)}" role="button" tabindex="0" aria-pressed="${watched}" aria-label="${watched ? "Unwatch" : "Watch"} ${esc(panelRowLabel(p, r))}">${watched ? "★" : "☆"}</td>`
+            : "";
+          return (
+            "<tr>" +
+            star +
+            p.columns
+              .map((c) => `<td class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}">${cell(r, c)}</td>`)
+              .join("") +
+            "</tr>"
+          );
+        })
+        .join("");
+      return `<section aria-labelledby="panel-heading-${i}">
+        <h2 class="section-label" id="panel-heading-${i}"><span aria-hidden="true">${String(4 + i).padStart(2, "0")}</span> <em>${esc(p.title)}</em></h2>
+        <div class="table-wrap">
+          <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
+        </div>
+        <div class="status">${esc(p.subtitle) || ""}</div>
+      </section>`;
     })
     .join("");
-  $("#fit-status").textContent =
-    `${runnable.length} MODELS FIT · ${candidates.length} OPEN-WEIGHT MODELS WITH KNOWN SIZE · EST. VRAM = PARAMS × ${QUANT_BYTES[quant]}B × 1.2 OVERHEAD`;
+}
+$("#panels-container").addEventListener("click", (e) => {
+  const star = e.target.closest(".watch-cell");
+  if (star) {
+    toggleWatch(state.slug, star.dataset.panelKey);
+    renderPanel();
+    return;
+  }
+  const th = e.target.closest("th[data-sort]");
+  if (!th) return;
+  const i = +th.dataset.panel;
+  const key = th.dataset.sort;
+  const cur = panelSort[i];
+  panelSort[i] = cur && cur.key === key ? { key, dir: -cur.dir } : { key, dir: -1 };
+  renderPanel();
+});
+// Same non-button-element gap as #rows' watch star above, plus the panel's
+// own sort headers -- neither a <td> nor a <th> gets Enter/Space for free.
+$("#panels-container").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const target = e.target.closest(".watch-cell, th[data-sort]");
+  if (!target) return;
+  e.preventDefault();
+  target.click();
+});
+
+/* ── merged feed ────────────────────────────── */
+const ETYPE_LABEL = {
+  new_leader: "NEW #1", new_model: "NEW MODEL", new_entrant: "NEW ENTRY",
+  new_candidate: "NEW RAISE", new_prime: "NEW PRIME", big_climber: "CLIMBER",
+  price_drop: "PRICE DROP", big_award: "BIG AWARD", funding_drop: "FUNDING DROP",
+  regime_change: "REGIME", stealth_raise: "STEALTH", faint_signal: "FAINT SIGNAL",
+  breakout: "BREAKOUT", crossing_over: "CROSSOVER", rate_spike: "RATE SPIKE",
+  rate_drop: "RATE DROP", congestion: "CONGESTION",
+  hiring_surge: "HIRING", stealth_graduated: "GRADUATED",
+  whale_move: "WHALE MOVE", new_program: "NEW PROGRAM",
+  budget_shift: "BUDGET SHIFT",
+};
+
+let feedEvents = [];
+
+async function loadFeed() {
+  try {
+    const r = await fetch("/api/observatory/whats-new?limit=40");
+    const data = await r.json();
+    feedEvents = data.events || [];
+    renderFeed();
+  } catch (e) {
+    $("#feed").innerHTML = `<div class="feed-empty">⚠ ${esc(e)}</div>`;
+  }
 }
 
-/* ── tab switching ─────────────────────────── */
+function renderFeed() {
+  const el = $("#feed");
+  let events = feedEvents;
+  if (state.feedWatchedOnly) {
+    events = events.filter((e) => isWatched(e.telescope, e.key));
+  }
+  if (!events.length) {
+    el.innerHTML = `<div class="feed-empty">${
+      feedEvents.length
+        ? "No events for your watchlist yet."
+        : "Calibrating — the observatory announces changes after its second sweep of each telescope."
+    }</div>`;
+    return;
+  }
+  el.innerHTML = events
+    .map((e) => {
+      const escHeadline = esc(e.headline);
+      const escName = esc(e.name);
+      const head = e.link
+        ? escHeadline.replace(
+            escName,
+            `<a href="${e.link}" target="_blank" rel="noopener">${escName}</a>`
+          )
+        : escHeadline;
+      const watched = isWatched(e.telescope, e.key);
+      return `<div class="feed-item t-${e.type}${watched ? " watched" : ""}">
+        <span class="dot"></span>
+        ${watched ? '<span class="wstar" title="On your watchlist">★</span>' : ""}
+        <span class="escope">${e.glyph || "🔭"} ${esc(e.telescope_name || e.telescope) || ""}</span>
+        <span class="etype">${esc(ETYPE_LABEL[e.type] || e.type)}</span>
+        <span class="ehead">${head}</span>
+        <span class="etime">${ago(Date.now() / 1000 - e.ts)}</span>
+      </div>`;
+    })
+    .join("");
+}
+
+/* ── roadmap ────────────────────────────────── */
+async function loadRoadmap() {
+  const el = $("#roadmap");
+  if (el.dataset.loaded) return;
+  try {
+    const r = await fetch("/api/roadmap");
+    const data = await r.json();
+    el.innerHTML = data.phases
+      .map(
+        (p) => `<div class="rm-phase">
+          <div class="rm-head"><span class="rm-status s-${p.status}">${esc(p.status)}</span>
+            <span class="rm-title">${esc(p.title)}</span></div>
+          <div class="rm-note">${esc(p.note) || ""}</div>
+          <ul class="rm-items">${p.items
+            .map(
+              (i) =>
+                `<li class="i-${i.done ? "done" : "todo"}"><span class="mark">${
+                  i.done ? "▰" : "▱"
+                }</span> <b>${esc(i.name)}</b>${i.detail ? ` — ${esc(i.detail)}` : ""}</li>`
+            )
+            .join("")}</ul>
+        </div>`
+      )
+      .join("");
+    el.dataset.loaded = "1";
+  } catch (e) {
+    el.innerHTML = `<div class="feed-empty">⚠ ${esc(e)}</div>`;
+  }
+}
+
+/* ── views ──────────────────────────────────── */
+/* ── morning brief ──────────────────────────── */
+async function loadBrief() {
+  const el = $("#brief");
+  el.innerHTML = `<div class="feed-empty">LOADING BRIEF…</div>`;
+  try {
+    const r = await fetch("/api/observatory/brief");
+    const data = await r.json();
+    $("#brief-meta").textContent =
+      `GENERATED ${ago(Date.now() / 1000 - data.generated_at)} AGO · ` +
+      `COVERING THE LAST ${ago(Date.now() / 1000 - data.since)}`;
+    if (!data.sections || !data.sections.length) {
+      el.innerHTML = `<div class="feed-empty">No telescopes enabled.</div>`;
+      return;
+    }
+    el.innerHTML = data.sections
+      .map((s) => {
+        const lead = s.leader
+          ? `<b>${esc(s.leader.name)}</b> <span class="brief-score">${s.leader.score}</span>`
+          : `<span class="dim">no leader yet</span>`;
+        const events =
+          s.top_events.map((e) => `<li>${esc(e.headline)}</li>`).join("") ||
+          `<li class="dim">nothing new</li>`;
+        return `<div class="brief-section">
+          <div class="brief-head">
+            <span class="brief-glyph">${s.glyph}</span>
+            <span class="brief-name">${esc(s.name)}</span>
+            <span class="brief-count">${s.event_count} NEW</span>
+          </div>
+          <div class="brief-lead">${lead}</div>
+          <ul class="brief-events">${events}</ul>
+        </div>`;
+      })
+      .join("");
+  } catch (e) {
+    el.innerHTML = `<div class="feed-empty">⚠ ${esc(e)}</div>`;
+  }
+}
+$("#send-brief").addEventListener("click", async () => {
+  $("#send-brief").disabled = true;
+  try {
+    await fetch("/api/observatory/brief/send", { method: "POST" });
+    await loadBrief();
+  } finally {
+    $("#send-brief").disabled = false;
+  }
+});
+
 function switchView(view) {
-  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === view));
+  document.querySelectorAll(".tab").forEach((t) =>
+    t.classList.toggle("active", t.dataset.view === view)
+  );
   document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== "view-" + view));
   if (view === "feed") loadFeed();
-  if (view === "fit") renderFit();
+  if (view === "brief") loadBrief();
+  if (view === "roadmap") loadRoadmap();
 }
 $("#tabs").addEventListener("click", (e) => {
   const tab = e.target.closest(".tab");
   if (tab) switchView(tab.dataset.view);
 });
 
-// ── events ──
-document.querySelectorAll("th[data-sort]").forEach((th) => {
-  th.addEventListener("click", () => {
-    const key = th.dataset.sort;
-    if (state.sort.key === key) state.sort.dir *= -1;
-    else state.sort = { key, dir: key === "name" || key === "rank" ? 1 : -1 };
-    render();
-  });
-});
 $("#search").addEventListener("input", (e) => { state.search = e.target.value; render(); });
 $("#scored-only").addEventListener("change", (e) => { state.scoredOnly = e.target.checked; render(); });
 $("#hide-noise").addEventListener("change", (e) => { state.hideNoise = e.target.checked; render(); });
+$("#watched-only").addEventListener("change", (e) => { state.watchedOnly = e.target.checked; render(); });
+$("#feed-watched-only").addEventListener("change", (e) => { state.feedWatchedOnly = e.target.checked; renderFeed(); });
 $("#refresh").addEventListener("click", () => load(true));
 $("#reset-weights").addEventListener("click", () => { state.weights = {}; load(false); });
+$("#save-view").addEventListener("click", saveCurrentView);
 
-initFitControls();
-load(false);
+/* ── boot ───────────────────────────────────── */
+(async function boot() {
+  await loadCatalog();
+  load(false);
+})();

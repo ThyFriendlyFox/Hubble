@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "hf-dash",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["app.py"],
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["scripts/dev.sh"],
       "port": 5000,
       "autoPort": true
     }
