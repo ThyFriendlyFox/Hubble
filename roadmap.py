@@ -6214,6 +6214,122 @@ PHASES = [
                        "change from any prior finding."},
         ],
     },
+    {
+        "title": "PHASE 27 · A SECOND CLEAN ITERATION, DIFFERENT CHECKS",
+        "status": "next",
+        "note": "Continued the outward-facing-verification spirit of the "
+                "CVE check, but pointed at different targets: request-"
+                "level safety hygiene in this project's own outbound "
+                "calls, live health of Pasteur's crawl target, and a "
+                "fresh end-to-end sweep of the full pipeline. Also hit "
+                "and correctly stepped around a piece of unrelated "
+                "environment state that wasn't mine to touch. Everything "
+                "came back clean or already-correct -- the honest, "
+                "expected result, not a sign the checking was shallow.",
+        "items": [
+            {"name": "Checked outbound-request safety hygiene fleet-wide "
+                     "-- disabled TLS verification and missing timeouts "
+                     "are both real, common misconfigurations worth "
+                     "ruling out explicitly rather than assuming this "
+                     "project already avoids them", "done": True,
+             "detail": "Grepped for verify=False/InsecureRequestWarning/"
+                       "ssl._create_unverified anywhere in the codebase -- "
+                       "zero hits, no outbound request ever disables "
+                       "certificate verification. Grepped every direct "
+                       "requests.get/requests.post call outside the "
+                       "shared telescope/http.py helpers: all four in "
+                       "telescope/notifier.py (the three Discord/Slack "
+                       "event/digest posts and the Slack digest post) "
+                       "already carry timeout=15, and http.py's own "
+                       "single shared fetch path always takes an explicit "
+                       "timeout parameter -- confirming the timeout "
+                       "discipline this project built during its earlier "
+                       "cache-stampede/circuit-breaker work covers every "
+                       "real outbound call, not just the ones that "
+                       "motivated it at the time."},
+            {"name": "Found a separate, legitimate git worktree "
+                     "unrelated to this task while grepping broadly, and "
+                     "correctly left it alone rather than investigating "
+                     "or cleaning it up", "done": True,
+             "detail": "A broad grep for requests.get/post surfaced hits "
+                       "inside .claude/worktrees/confident-bose-e4d7ae/ -- "
+                       "confirmed via `git worktree list` this is a real, "
+                       "separate, gitignored worktree checked out on its "
+                       "own branch (claude/confident-bose-e4d7ae), not "
+                       "stale garbage or part of the active source tree. "
+                       "Left it completely untouched -- it isn't this "
+                       "task's to investigate, delete, or modify, and "
+                       "doing so without understanding what in-progress "
+                       "work it might represent would be exactly the kind "
+                       "of unfamiliar-state action this project's own "
+                       "safety discipline says to avoid. Excluded it from "
+                       "all further searches this iteration."},
+            {"name": "Re-verified two specific, previously-recorded live "
+                     "claims are still accurate today rather than "
+                     "assuming they still hold", "done": True,
+             "detail": "SAM.gov's undocumented internal search endpoint "
+                       "(sam.gov/api/prod/sgs/v1/search/...), the "
+                       "'finding, not a fix' HANDOFF.md already records "
+                       "as deliberately unused for a ToS/legal reason -- "
+                       "still returns a live 200 today, confirming that "
+                       "paragraph remains accurate rather than describing "
+                       "a channel that's since closed. BioSpace's "
+                       "robots.txt (Pasteur's crawl target) is unchanged "
+                       "from what was verified when Pasteur was built -- "
+                       "same Crawl-delay: 1, same three disallowed paths "
+                       "(a new meta-externalagent block on /archive/ "
+                       "doesn't affect this project's own UA string) -- "
+                       "and the news-sitemap.xml -> news-sitemap-content."
+                       "xml discovery chain Pasteur's code expects is "
+                       "still live, with a same-day lastmod confirming "
+                       "the site is actively maintained, not abandoned."},
+            {"name": "Forced a real, fresh end-to-end Pasteur sweep "
+                     "rather than trusting cached data, and correctly "
+                     "explained an unexpected-looking result instead of "
+                     "either ignoring it or treating it as a bug",
+             "done": True,
+             "detail": "`?refresh=1` against a live Pasteur returned in "
+                       "~1s -- suspiciously fast next to the ~55s cold-"
+                       "sweep time documented when Pasteur was built, "
+                       "which could have looked like force wasn't "
+                       "actually forcing anything. Checked the response's "
+                       "own `ages` field rather than guessing: trials and "
+                       "press were genuinely re-fetched fresh (age 0), "
+                       "while backlinks correctly stayed on its own "
+                       "independent, longer cache (~9.4h old, inside its "
+                       "24h TTL) -- exactly the designed-in behavior "
+                       "documented in pasteur.py's own "
+                       "_backlink_graph() (crawling is the expensive "
+                       "step and deliberately doesn't repeat on force's "
+                       "cadence). 269 real rows, real company names, real "
+                       "scores -- the full pipeline (ClinicalTrials.gov, "
+                       "the cached crawl, PageRank centrality, the "
+                       "ranking blend) is genuinely healthy right now, "
+                       "not just superficially responding."},
+            {"name": "Reran the full suite of checks -- both fast test "
+                     "suites, the JS suite, and the complete live suite, "
+                     "not just the fast ones -- before concluding a "
+                     "second clean iteration in a row", "done": True,
+             "detail": "272 Python tests, 33 JS tests, and the full live "
+                       "suite (110 passed, 2 skipped -- the same pre-"
+                       "existing, already-flagged Kepler hiring_count "
+                       "skip and OpenAlex-budget skip, identical to every "
+                       "prior baseline) all green. Ran test_live.py in "
+                       "full specifically because this iteration's own "
+                       "checks (the fresh Pasteur sweep) had just touched "
+                       "live external state, making a full live-suite "
+                       "pass the most meaningful confirmation available "
+                       "that nothing regressed as a result."},
+            {"name": "Verified nothing else drifted: dev server and "
+                     "blocked-sources table reconfirmed", "done": True,
+             "detail": "Dev server confirmed healthy on its running port "
+                       "with all seven telescopes registered and zero "
+                       "load_errors, no restart needed. Re-probed all four "
+                       "historically-blocked sources (SAM.gov, Semantic "
+                       "Scholar, Jackson's SBIR, Holmdel's OpenAlex) -- no "
+                       "change from any prior finding."},
+        ],
+    },
 ]
 
 
