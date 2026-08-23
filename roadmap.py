@@ -5421,6 +5421,101 @@ PHASES = [
                        "change from any prior finding."},
         ],
     },
+    {
+        "title": "PHASE 20 · AN ANIMATION THAT NEVER STOPS",
+        "status": "next",
+        "note": "A fifth accessibility dimension, distinct from the "
+                "keyboard-behavior and color-contrast passes before it: "
+                "motion. Grepped every animation/transition in style.css "
+                "and found one genuinely non-negotiable violation -- an "
+                "infinite-looping animation with no way to pause it, "
+                "shown routinely, with zero prefers-reduced-motion "
+                "handling anywhere in the file.",
+        "items": [
+            {"name": "Grepped every animation/transition in style.css "
+                     "rather than checking one already-suspicious spot, "
+                     "and correctly triaged which ones actually mattered "
+                     "for reduced motion versus which didn't", "done": True,
+             "detail": "Found four animated things total: brief hover/"
+                       "press feedback (.15s-.2s color/background "
+                       "transitions on tabs, buttons, checkboxes -- not "
+                       "the kind of large or looping motion reduced-"
+                       "motion guidance specifically targets), a one-shot "
+                       ".25s view-switch fade, a one-shot staggered .5s "
+                       "podium entrance animation, and -- the one that "
+                       "actually mattered -- `.loading::after { animation: "
+                       "blink 1s steps(4) infinite; }`, shown every time "
+                       "any telescope switches, refreshes, or re-fetches "
+                       "after a weight change. An infinite, unpauseable "
+                       "animation is exactly what WCAG 2.2.2 (Pause, Stop, "
+                       "Hide) exists to prevent, and it's specifically "
+                       "flagged as a trigger for vestibular disorders and "
+                       "motion sickness -- confirmed no `prefers-reduced-"
+                       "motion` handling existed anywhere in the file at "
+                       "all before treating this as worth fixing."},
+            {"name": "Fixed with the standard universal override rather "
+                     "than hand-picking selectors, matching this file's "
+                     "own established preference for root-cause fixes "
+                     "over enumerated patches", "done": True,
+             "detail": "`@media (prefers-reduced-motion: reduce) { *, "
+                       "*::before, *::after { animation-duration: 0.01ms "
+                       "!important; animation-iteration-count: 1 "
+                       "!important; transition-duration: 0.01ms "
+                       "!important; scroll-behavior: auto !important; } }` "
+                       "-- the widely-used universal technique for this "
+                       "exact problem, rather than tracking down and "
+                       "overriding each of the four animated selectors "
+                       "individually (which would also silently miss any "
+                       "animation added later). Scoped entirely inside "
+                       "the media query, so normal-motion users see zero "
+                       "change -- this is strictly additive."},
+            {"name": "Verified live in both directions -- that the "
+                     "override genuinely neutralizes the infinite "
+                     "animation when active, and that normal motion is "
+                     "completely unaffected when it isn't -- rather than "
+                     "trusting that the CSS merely parsed", "done": True,
+             "detail": "This sandboxed browser has no OS-level reduced-"
+                       "motion preference to flip on for a true end-to-end "
+                       "test, so verified the mechanism directly instead: "
+                       "confirmed the new @media rule actually parsed into "
+                       "a real CSSMediaRule via document.styleSheets (not "
+                       "silently dropped for a syntax error), forced the "
+                       "loading state to render and read its baseline "
+                       "computed style (animation-duration: '1s', "
+                       "animation-iteration-count: 'infinite'), then "
+                       "injected the exact same override rule "
+                       "unconditionally (bypassing the media condition, "
+                       "not duplicating or approximating it) and confirmed "
+                       "the computed values actually changed to "
+                       "'1e-05s'/'1' -- proving the mechanism achieves the "
+                       "intended effect, not just that it's syntactically "
+                       "present. Also checked the podium entrance and "
+                       "view-fade animations under the same injected rule "
+                       "and confirmed both were neutralized too. Removed "
+                       "the injected test rule, reloaded fresh, and "
+                       "confirmed normal motion is completely restored "
+                       "(animation-duration back to '1s', "
+                       "window.matchMedia('(prefers-reduced-motion: "
+                       "reduce)').matches correctly reads false in this "
+                       "environment) -- the media-query scoping itself "
+                       "works, not just the override's contents."},
+            {"name": "Confirmed no unit test needed writing, same pure-"
+                     "CSS boundary the last two phases already "
+                     "established -- ran the JS suite anyway to confirm "
+                     "no regression", "done": True,
+             "detail": "A CSS-only addition, no JS or Python touched. "
+                       "33/33 JS tests still pass, 272 Python tests "
+                       "unaffected."},
+            {"name": "Verified nothing else drifted: dev server and "
+                     "blocked-sources table reconfirmed", "done": True,
+             "detail": "Dev server confirmed healthy on its running port "
+                       "with all seven telescopes registered and zero "
+                       "load_errors, no restart needed. Re-probed all four "
+                       "historically-blocked sources (SAM.gov, Semantic "
+                       "Scholar, Jackson's SBIR, Holmdel's OpenAlex) -- no "
+                       "change from any prior finding."},
+        ],
+    },
 ]
 
 

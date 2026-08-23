@@ -551,3 +551,26 @@ tbody tr.top1 td .up, tbody tr.top1 td .down { color: #000; }
   color: var(--ink-faint); font-size: 9.5px; letter-spacing: .3px; line-height: 1.6;
 }
 .calc-tip .ct-dampen { color: var(--ink); }
+
+/* ── reduced motion ───────────────────────── */
+/* This file has no prefers-reduced-motion handling at all today. Most of
+   the animations above are brief hover/press feedback (.15s-ish), but
+   .loading::after runs `animation: blink 1s steps(4) infinite` with no
+   way to pause it -- shown on every telescope switch, refresh, and
+   weight-change re-fetch, so a user with reduced motion enabled (a real
+   OS-level accessibility setting, not a rare edge case -- vestibular
+   disorders, migraines, and motion sickness triggered by animation are
+   the documented reasons for it) would see it looping indefinitely with
+   no way to stop it, exactly what WCAG 2.2.2 (Pause, Stop, Hide) exists
+   to prevent. The universal !important override below is the standard,
+   widely-used technique for this rather than hand-picking each animated
+   selector: near-zero duration and a single iteration for everything,
+   under the media query so normal motion is completely unaffected. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

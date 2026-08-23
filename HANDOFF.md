@@ -273,8 +273,24 @@ re-checking, a section of the app never yet touched):
    that reference it, landing at 4.82-5.00:1 against the three backgrounds
    checked plus the tooltip's own slightly-lighter background (4.68:1) —
    confirmed live via the browser's own computed `color`, not just the
-   source value. Four passes so far; worth a re-check if a new custom
-   control or color is ever added.
+   source value. A fifth pass checked motion: `.loading::after` runs
+   `animation: blink 1s steps(4) infinite` — shown on every telescope
+   switch, refresh, and weight-change re-fetch — with no way to pause it,
+   exactly what WCAG 2.2.2 (Pause, Stop, Hide) exists to prevent for users
+   with vestibular disorders or motion sickness triggered by animation (a
+   real OS-level accessibility setting, `prefers-reduced-motion`, not a
+   rare edge case). Nothing in `style.css` handled that media feature at
+   all. Fixed with the standard universal override
+   (`*, *::before, *::after { animation-duration: 0.01ms !important; ... }`
+   under `@media (prefers-reduced-motion: reduce)`) rather than hand-picking
+   each animated selector. Verified live in both directions: injected the
+   exact same rule unconditionally and confirmed the loading blink's
+   computed `animation-iteration-count` actually drops from `infinite` to
+   `1` (not just that the CSS parsed), then removed it and confirmed normal
+   motion is completely unaffected (`animation-duration: 1s`,
+   `prefers-reduced-motion` correctly reads `false` in this environment).
+   Five passes so far; worth a re-check if a new custom control, color, or
+   animation is ever added.
 
 `static/app.js`'s pure/DOM-free logic has real coverage — `tests_js/`, using
 Node's built-in `node:test`/`node:vm` (already on the machine, zero npm
