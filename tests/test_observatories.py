@@ -1827,6 +1827,20 @@ def test_parse_sitemap_returns_empty_list_on_malformed_xml():
     assert _parse_sitemap("<not><valid") == []
 
 
+def test_parse_sitemap_skips_an_entry_missing_loc():
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" '
+        'xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">'
+        '<url><lastmod>2026-08-20T00:00:00-04:00</lastmod></url>'
+        '<url><loc>https://www.biospace.com/ok</loc>'
+        '<lastmod>2026-08-19T00:00:00-04:00</lastmod></url>'
+        '</urlset>'
+    )
+    items = _parse_sitemap(xml)
+    assert [i["url"] for i in items] == ["https://www.biospace.com/ok"]
+
+
 def test_parse_sitemap_caps_at_max_press_items():
     entries = [
         (f"https://www.biospace.com/{i}", f"2026-08-{i:02d}T00:00:00-04:00", "T", "k")
@@ -1925,6 +1939,105 @@ def test_collect_stops_paginating_at_max_trial_pages_even_with_more_available():
              patch.object(pasteur, "crawl_web", return_value={}):
             pas.collect(force=True)
         assert calls["n"] == pasteur.MAX_TRIAL_PAGES
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_source_keys_names_all_three_cached_sources():
+    pas, tmp = _isolated_pasteur()
+    try:
+        assert pas.source_keys() == ["trials", "press", "backlinks"]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_trials_stops_immediately_when_the_first_page_fetch_fails():
+    """try_json returning falsy (a timeout, a non-200 inside its own
+    default=None contract) must stop pagination on the spot, not treat it
+    as an empty-but-successful page and keep requesting further pages."""
+    pas, tmp = _isolated_pasteur()
+    calls = {"n": 0}
+
+    def fake_try_json(url, default=None, **kw):
+        calls["n"] += 1
+        return None
+
+    try:
+        with patch.object(pasteur, "try_json", side_effect=fake_try_json):
+            trials = pas._trials(3600)
+        assert trials == []
+        assert calls["n"] == 1
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_backlink_graph_seeds_only_from_press_releases_matching_a_sponsor():
+    """A press release whose title/keywords match no known sponsor name
+    contributes no seed -- confirms the per-item skip actually filters
+    rather than seeding from everything indiscriminately."""
+    pas, tmp = _isolated_pasteur()
+    press = [
+        {"url": "https://www.biospace.com/acme", "title": "Acme Bio Announces Results",
+         "keywords": "biotech"},
+        {"url": "https://www.biospace.com/unrelated", "title": "Local Weather Update",
+         "keywords": "weather"},
+    ]
+    try:
+        with patch.object(pasteur, "crawl_web", return_value={}) as mock_crawl:
+            pas._backlink_graph(press, ["Acme Bio"])
+        seeds = mock_crawl.call_args[0][0]
+        assert seeds == ["https://www.biospace.com/acme"]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_backlink_graph_link_filter_accepts_biospace_articles_only():
+    """The link_filter passed to crawl_web -- exercised directly here since
+    crawl_web itself is mocked in every collect() test and never actually
+    calls it."""
+    pas, tmp = _isolated_pasteur()
+    press = [{"url": "https://www.biospace.com/acme", "title": "Acme Bio Announces Results",
+              "keywords": "biotech"}]
+    try:
+        with patch.object(pasteur, "crawl_web", return_value={}) as mock_crawl:
+            pas._backlink_graph(press, ["Acme Bio"])
+        link_filter = mock_crawl.call_args[1]["link_filter"]
+        assert link_filter("https://www.biospace.com/some-article") is True
+        assert link_filter("https://www.biospace.com/companies") is False
+        assert link_filter("https://www.biospace.com/companies/") is False
+        assert link_filter("https://www.biospace.com/sitemap.xml") is False
+        assert link_filter("https://other.example/some-article") is False
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_collect_leaves_last_update_days_ago_none_when_never_updated():
+    """A sponsor whose studies carry no lastUpdatePostDate at all -- the
+    days-ago calculation must not run at all, not run and produce a bogus
+    value."""
+    pas, tmp = _isolated_pasteur()
+    trials_response = _trials_page([_study("Acme Bio", updated=None)])
+    try:
+        with patch.object(pasteur, "try_json", return_value=trials_response), \
+             patch.object(pasteur, "try_text", return_value=None), \
+             patch.object(pasteur, "crawl_web", return_value={}):
+            rows = pas.collect(force=True)
+        assert rows[0]["last_update_days_ago"] is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_collect_handles_an_unparseable_last_update_date():
+    """ClinicalTrials.gov dates are normally clean ISO dates, but the
+    parse is defensive rather than assuming that always holds."""
+    pas, tmp = _isolated_pasteur()
+    trials_response = _trials_page([_study("Acme Bio", updated="not-a-date")])
+    try:
+        with patch.object(pasteur, "try_json", return_value=trials_response), \
+             patch.object(pasteur, "try_text", return_value=None), \
+             patch.object(pasteur, "crawl_web", return_value={}):
+            rows = pas.collect(force=True)
+        assert rows[0]["last_update_days_ago"] is None
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

@@ -1659,6 +1659,15 @@ def test_pagerank_empty_graph_returns_empty():
     assert graph.pagerank({}) == {}
 
 
+def test_pagerank_runs_the_full_iteration_budget_when_tol_is_unreachable():
+    """tol=0 can never be satisfied by a floating-point delta, so this must
+    run all `iterations` passes and return via the loop's natural end
+    rather than the early-convergence break -- both exits should agree."""
+    edges = {"a": ["b"], "b": ["c"], "c": ["a"]}
+    scores = graph.pagerank(edges, iterations=3, tol=0)
+    assert abs(sum(scores.values()) - 1.0) < 1e-6
+
+
 # ── crawler (telescope/crawl.py) ─────────────────────────────────────────
 def test_extract_links_resolves_relative_hrefs_against_base_url():
     html = '<a href="/b">b</a><a href="https://example.com/c">c</a><a>no href</a>'
@@ -1672,6 +1681,21 @@ def test_extract_links_survives_malformed_html():
     html = '<a href="/ok">ok</a><div class="unclosed'
     links = crawl._extract_links(html, "https://example.com/")
     assert links == ["https://example.com/ok"]
+
+
+def test_extract_links_ignores_non_anchor_tags():
+    html = '<p>text</p><a href="/x">x</a><span>more</span>'
+    links = crawl._extract_links(html, "https://example.com/")
+    assert links == ["https://example.com/x"]
+
+
+def test_extract_links_survives_a_parser_exception_mid_feed():
+    """Exercises the except branch directly -- html.parser is lenient enough
+    that real malformed markup rarely actually raises, so this proves the
+    guard itself works rather than hoping to stumble into triggering input."""
+    with patch.object(crawl._LinkExtractor, "feed", side_effect=RuntimeError("boom")):
+        links = crawl._extract_links("<a href='/x'>x</a>", "https://example.com/")
+    assert links == []
 
 
 def test_robots_allow_respects_a_disallow_rule():
@@ -1728,6 +1752,57 @@ def test_crawl_skips_pages_robots_txt_disallows_without_counting_them():
          patch("time.sleep"):
         result = crawl.crawl(["https://example.com/blocked"], max_pages=10)
     assert result == {}
+
+
+def test_crawl_records_a_failed_fetch_as_a_page_with_no_edges():
+    """A page that fetches (robots.txt allows it) but returns no content --
+    a timeout or a non-200 status inside try_text's own default=None
+    contract -- still counts against max_pages and appears in the graph,
+    just with no outgoing edges, rather than being silently dropped."""
+    def fake_fetch(url, default=None, **kw):
+        return None
+
+    with patch.object(crawl, "try_text", side_effect=fake_fetch), \
+         patch.object(crawl, "robots_allow", return_value=True), \
+         patch("time.sleep"):
+        result = crawl.crawl(["https://example.com/dead"], max_pages=10)
+    assert result == {"https://example.com/dead": []}
+
+
+def test_crawl_dedupes_a_link_discovered_from_two_different_pages():
+    """Two seed pages both link to the same third page -- it must be
+    fetched once, not twice."""
+    fetch_count = {"n": 0}
+
+    def fake_fetch(url, default=None, **kw):
+        fetch_count["n"] += 1
+        if url in ("https://example.com/a", "https://example.com/b"):
+            return '<a href="https://example.com/shared">shared</a>'
+        return ""
+
+    with patch.object(crawl, "try_text", side_effect=fake_fetch), \
+         patch.object(crawl, "robots_allow", return_value=True), \
+         patch("time.sleep"):
+        result = crawl.crawl(
+            ["https://example.com/a", "https://example.com/b"], max_pages=10,
+        )
+    assert fetch_count["n"] == 3  # a, b, shared -- shared fetched exactly once
+    assert "https://example.com/shared" in result
+
+
+def test_crawl_records_an_off_domain_link_but_does_not_follow_it():
+    """same_domain_only bounds what gets *visited* next, exactly like
+    link_filter -- the edge to the external page is still real and recorded,
+    it just never gets its own fetch."""
+    def fake_fetch(url, default=None, **kw):
+        return '<a href="https://other.example/page">external</a>'
+
+    with patch.object(crawl, "try_text", side_effect=fake_fetch), \
+         patch.object(crawl, "robots_allow", return_value=True), \
+         patch("time.sleep"):
+        result = crawl.crawl(["https://example.com/seed"], max_pages=10)
+    assert result["https://example.com/seed"] == ["https://other.example/page"]
+    assert "https://other.example/page" not in result
 
 
 def test_crawl_link_filter_bounds_the_frontier_not_the_recorded_edges():

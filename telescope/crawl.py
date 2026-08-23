@@ -100,6 +100,10 @@ def crawl(seed_urls, *, max_pages=40, delay=1.0, same_domain_only=True, link_fil
     while queue and fetched < max_pages:
         url = queue.pop(0)
         if url in visited:
+            # Defensive only: the dedup check below (`link in visited or
+            # link in queue`) already prevents anything from ever entering
+            # the queue twice, so this never fires today -- kept as a
+            # guard against that invariant breaking under a future change.
             continue
         visited.add(url)
         if not robots_allow(url):

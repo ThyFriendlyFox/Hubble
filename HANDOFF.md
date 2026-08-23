@@ -10,7 +10,7 @@ anything.
 Seven telescopes (Hubble, Jackson, Simons, Kepler, Holmdel, Reddington,
 Pasteur) run on live public data, no API keys. Kernel in `telescope/`, one
 domain pack per telescope in `observatories/`, one generic frontend driven
-entirely by telescope metadata. 133 kernel tests + 122 domain-pack tests +
+entirely by telescope metadata. 139 kernel tests + 129 domain-pack tests +
 104 live tests + 33 zero-dependency Node tests covering every DOM-free
 function in static/app.js (check the actual counts with `-q` / `node
 --test`, don't trust these numbers for long).
@@ -115,16 +115,24 @@ now — don't default back into any of them without a genuinely new angle
 (new code that could have introduced new drift, a specific claim worth
 re-checking, a section of the app never yet touched):
 
-1. **Extend test coverage.** Done for everything that predates Pasteur — the
-   rest of the Python codebase is individually audited, and every DOM-free
-   function in `static/app.js` has real coverage too (see below). Every
-   remaining gap there is a deliberately-judged omission (Python) or would
-   need a real DOM shim (the rendering/event-wiring half of app.js).
-   Pasteur itself (`telescope/crawl.py`, `telescope/graph.py`,
-   `observatories/pasteur.py`) shipped with unit tests for its own pure
-   logic and kernel primitives, but hasn't been through a dedicated
-   coverage.py pass the way the rest of the codebase was — a real,
-   legitimately fresh angle for a future iteration, not yet exhausted.
+1. **Extend test coverage.** Done for the entire Python codebase now,
+   Pasteur included — a `coverage.py --branch` pass over
+   `telescope/crawl.py`, `telescope/graph.py`, and `observatories/pasteur.py`
+   found and closed 7 real gaps (a non-anchor HTML tag, the parser-exception
+   guard, a failed fetch's empty-edges case, a link discovered from two
+   pages, an off-domain link recorded but not followed, a sitemap `<url>`
+   missing `<loc>`, `source_keys()`, a trials page-fetch failure, the
+   backlink seed filter's per-item skip, the crawl's own `link_filter`
+   closure, and both branches of `collect()`'s last-update date handling)
+   plus one in `telescope/graph.py` (`pagerank()`'s loop exhausting its
+   iteration budget rather than converging early). `telescope/crawl.py` sits
+   at 98% (one line, `if url in visited: continue` inside `crawl()`,
+   documented inline as unreachable — the enqueue-time dedup check already
+   makes it impossible to trigger without breaking that invariant on
+   purpose). Every DOM-free function in `static/app.js` has real coverage
+   too (see below); the remaining Python gaps are deliberately-judged
+   omissions and the rendering/event-wiring half of app.js would need a
+   real DOM shim.
 2. **Verify a documentation file against reality.** Done for
    `TELESCOPES.md`, `README.md`, and every domain pack's own module
    docstring. `ROADMAP.md` is generated so it can't drift; `app.js`/
