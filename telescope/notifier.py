@@ -3,6 +3,20 @@
 `dispatch` is called by the poller with each sweep's new events. Channels are
 opt-in via env vars, so an unconfigured install just logs to stdout and the
 dashboard feed. Each channel is self-contained — enable one without the rest.
+
+Every headline embeds a `name` pulled straight from an unauthenticated public
+source (a GitHub repo, an npm package, an SEC Form D filer, a
+ClinicalTrials.gov sponsor, an HN post title, ...) — anyone can register any
+of those under any string they like. Discord parses `@everyone`/`@here`/role/
+user mentions out of plain message text by default, so relaying that text
+unmodified would let an attacker-chosen entity name page an entire server the
+moment its event fires. Every Discord payload here sets
+`allowed_mentions: {"parse": []}` to suppress all mention parsing regardless
+of message content — Discord's own documented mechanism for this exact case,
+not string-scrubbing for "@" ourselves. Slack's webhook `text` field doesn't
+have this problem: a plain "@everyone" renders as literal text there, real
+mentions need Slack's own bracketed `<!channel>`/`<@U...>` syntax, which no
+external source's freeform name field can produce by accident.
 """
 import os
 
@@ -32,7 +46,8 @@ def post_to_discord(event, scope):
     try:
         requests.post(
             url,
-            json={"content": f"**{scope.name}** · {event['headline']}"},
+            json={"content": f"**{scope.name}** · {event['headline']}",
+                  "allowed_mentions": {"parse": []}},
             timeout=15,
         )
         return True
@@ -94,7 +109,11 @@ def post_text_to_discord(text):
     if not url:
         return False
     try:
-        requests.post(url, json={"content": text[:2000]}, timeout=15)
+        requests.post(
+            url,
+            json={"content": text[:2000], "allowed_mentions": {"parse": []}},
+            timeout=15,
+        )
         return True
     except requests.RequestException:
         return False

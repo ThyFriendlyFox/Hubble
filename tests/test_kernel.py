@@ -1874,6 +1874,24 @@ def test_post_to_discord_posts_when_webhook_configured():
     mock_post.assert_called_once()
 
 
+def test_post_to_discord_suppresses_mention_parsing():
+    """Every headline embeds a name pulled from an unauthenticated public
+    source (a GitHub repo, an SEC filer, an HN title, ...) -- anyone can
+    register one under a string like '@everyone ...'. Discord parses
+    @everyone/@here/role/user mentions out of plain text by default, so
+    without allowed_mentions an attacker-chosen entity name could page an
+    entire Discord server the moment its event fires."""
+    env = {"OBSERVATORY_DISCORD_WEBHOOK": "https://discord.test/hook"}
+    with patch.dict(os.environ, env, clear=True), \
+         patch("telescope.notifier.requests.post") as mock_post:
+        notifier.post_to_discord(
+            {"headline": "@everyone check out this stock"}, _StubScope()
+        )
+    payload = mock_post.call_args.kwargs["json"]
+    assert payload["allowed_mentions"] == {"parse": []}
+    assert "@everyone" in payload["content"]  # content itself is untouched
+
+
 def test_post_to_discord_swallows_a_request_exception():
     env = {"OBSERVATORY_DISCORD_WEBHOOK": "https://discord.test/hook"}
     with patch.dict(os.environ, env, clear=True), \
@@ -1918,6 +1936,17 @@ def test_post_text_to_discord_and_slack_noop_without_webhooks():
         assert notifier.post_text_to_discord("digest") is False
         assert notifier.post_text_to_slack("digest") is False
     mock_post.assert_not_called()
+
+
+def test_post_text_to_discord_suppresses_mention_parsing():
+    """The brief digest concatenates every enabled telescope's own
+    unauthenticated entity names into one long text block -- same mention-
+    injection exposure as a single event's headline, same fix."""
+    env = {"OBSERVATORY_DISCORD_WEBHOOK": "https://discord.test/hook"}
+    with patch.dict(os.environ, env, clear=True), \
+         patch("telescope.notifier.requests.post") as mock_post:
+        notifier.post_text_to_discord("@everyone digest")
+    assert mock_post.call_args.kwargs["json"]["allowed_mentions"] == {"parse": []}
 
 
 def test_post_text_to_discord_and_slack_post_when_configured():

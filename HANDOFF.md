@@ -10,7 +10,7 @@ anything.
 Seven telescopes (Hubble, Jackson, Simons, Kepler, Holmdel, Reddington,
 Pasteur) run on live public data, no API keys. Kernel in `telescope/`, one
 domain pack per telescope in `observatories/`, one generic frontend driven
-entirely by telescope metadata. 139 kernel tests + 129 domain-pack tests +
+entirely by telescope metadata. 141 kernel tests + 129 domain-pack tests +
 112 live tests + 33 zero-dependency Node tests covering every DOM-free
 function in static/app.js (check the actual counts with `-q` / `node
 --test`, don't trust these numbers for long).
@@ -109,7 +109,7 @@ registration requirement for this exact data, a ToS/legal judgment call, not
 a technical one — not mine to make unilaterally in an unattended loop.
 
 If all the named sources are still blocked (expect this), read `ROADMAP.md`
-for what's already done, then look for real, previously-unflagged gaps. Four
+for what's already done, then look for real, previously-unflagged gaps. Five
 fallback avenues have each already had a full pass and are exhausted for
 now — don't default back into any of them without a genuinely new angle
 (new code that could have introduced new drift, a specific claim worth
@@ -170,6 +170,27 @@ re-checking, a section of the app never yet touched):
    on the app as it stands today.
 4. **Re-probe blocked sources for a real change.** Ongoing, every
    iteration, via the table above — cheap and already part of the loop.
+5. **Reason about untrusted external data reaching an output channel.**
+   Coverage stats can't find this category — `telescope/notifier.py`'s
+   Discord/Slack tests already had full line coverage before this pass, and
+   the gap was invisible to `coverage.py` because it's about payload
+   *content*, not which lines execute. Every event headline embeds a
+   `name` pulled straight from an unauthenticated public source (a GitHub
+   repo, an npm package, an SEC Form D filer, a ClinicalTrials.gov sponsor,
+   an HN post title, ...) — anyone can register one of those under any
+   string they like, including literal `@everyone`/`@here`. Discord parses
+   mentions out of plain webhook message text by default, so an
+   attacker-chosen entity name could page an entire Discord server the
+   moment its event fired — a real content-injection path from unauthenticated
+   public data into a push-notification channel, not a theoretical one.
+   Fixed by setting `allowed_mentions: {"parse": []}` on every Discord
+   payload (Discord's own documented mechanism for exactly this case).
+   Slack's webhook `text` field doesn't have this problem — plain
+   "@everyone" renders as literal text there; real mentions need Slack's
+   own bracketed syntax, which no external name field can produce by
+   accident. One pass so far; worth a re-check if a new output channel is
+   ever added, or if any existing one starts embedding raw external text
+   somewhere new.
 
 `static/app.js`'s pure/DOM-free logic has real coverage — `tests_js/`, using
 Node's built-in `node:test`/`node:vm` (already on the machine, zero npm
