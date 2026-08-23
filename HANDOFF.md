@@ -259,8 +259,22 @@ re-checking, a section of the app never yet touched):
    `:focus-visible` matching in real browsers regardless of the OS-focus
    quirk noted above, a second, distinct testing-environment trap this
    session had to route around correctly rather than let produce a false
-   negative. Three passes so far; worth a re-check if a new custom control
-   is ever added.
+   negative. A fourth pass moved to a different accessibility dimension
+   entirely — color contrast, not keyboard behavior — and computed real
+   WCAG relative-luminance ratios (not eyeballed) for every named color in
+   `style.css`'s palette against every background it's actually used on.
+   `--ink-faint` (`#5a5a57`) failed WCAG AA everywhere: 2.76-2.86:1 against
+   all three dark backgrounds, below even the lenient 3:1 large-text floor,
+   let alone 4.5:1 for normal text. Not decorative — it's the rank column,
+   the status line, empty-state copy, and the score-breakdown tooltip's own
+   RAW/WEIGHT figures (the exact content the second pass worked to make
+   keyboard-reachable). Fixed at the one root cause (the custom property
+   itself, `#80807d`) rather than touching each of the 27 individual rules
+   that reference it, landing at 4.82-5.00:1 against the three backgrounds
+   checked plus the tooltip's own slightly-lighter background (4.68:1) —
+   confirmed live via the browser's own computed `color`, not just the
+   source value. Four passes so far; worth a re-check if a new custom
+   control or color is ever added.
 
 `static/app.js`'s pure/DOM-free logic has real coverage — `tests_js/`, using
 Node's built-in `node:test`/`node:vm` (already on the machine, zero npm

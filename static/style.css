@@ -6,7 +6,17 @@
   --panel:     #100f12;
   --ink:       #ededea;
   --ink-dim:   #8b8b86;
-  --ink-faint: #5a5a57;
+  /* #5a5a57 (the original value) read at 2.76-2.86:1 against this file's
+     three dark backgrounds -- fails WCAG AA's 4.5:1 for normal text (and
+     even the more lenient 3:1 large-text/UI-component floor) everywhere
+     it's used, confirmed by computing real WCAG relative-luminance
+     contrast ratios, not eyeballed. This isn't a decorative color: it's
+     used for the rank column, the status line, empty-state copy, and the
+     score-breakdown tooltip's own RAW/WEIGHT figures -- substantive
+     content, not filler. #80807d clears 4.5:1 against all three
+     backgrounds (4.82-5.00:1) with a small margin rather than landing
+     exactly on the threshold. */
+  --ink-faint: #80807d;
   --line:      rgba(237, 237, 234, 0.10);
   --line-2:    rgba(237, 237, 234, 0.20);
   --line-3:    rgba(237, 237, 234, 0.40);
