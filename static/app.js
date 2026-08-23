@@ -226,6 +226,18 @@ $("#rows").addEventListener("click", (e) => {
   toggleWatch(state.slug, cell.dataset.key);
   render();
 });
+// The watch star is a <td>, not a native button -- role="button"/tabindex
+// above make it focusable and announce it to a screen reader, but only a
+// real <button>/<a> gets Enter/Space activation for free. Re-dispatching a
+// click on the already-focused element reuses the handler above instead of
+// duplicating the toggle logic here.
+$("#rows").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const cell = e.target.closest(".watch-cell");
+  if (!cell) return;
+  e.preventDefault();
+  cell.click();
+});
 
 /* ── observatory catalog + switcher ─────────── */
 async function loadCatalog() {
@@ -377,19 +389,28 @@ function applyIdentity(data) {
 function renderHead() {
   const cols = state.meta.columns;
   $("#thead-row").innerHTML =
-    `<th class="watch-th"></th><th class="left" data-sort="rank">#</th>` +
+    `<th class="watch-th"></th><th class="left" data-sort="rank" role="button" tabindex="0">#</th>` +
     cols
       .map(
         (c) =>
-          `<th class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}" data-sort="${c.field}">${esc(c.label)}</th>`
+          `<th class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}" data-sort="${c.field}" role="button" tabindex="0">${esc(c.label)}</th>`
       )
       .join("");
+  // A <th> isn't natively activatable -- the click handler carries the
+  // actual sort logic, and the keydown handler below just reuses it via a
+  // shared function instead of re-implementing it for Enter/Space.
   $("#thead-row").querySelectorAll("th[data-sort]").forEach((th) => {
-    th.addEventListener("click", () => {
+    const activate = () => {
       const key = th.dataset.sort;
       if (state.sort.key === key) state.sort.dir *= -1;
       else state.sort = { key, dir: key === "rank" || key === "name" ? 1 : -1 };
       render();
+    };
+    th.addEventListener("click", activate);
+    th.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      activate();
     });
   });
 }
@@ -444,18 +465,33 @@ function renderViews() {
     views
       .map(
         (v, i) => `<span class="view-chip" data-i="${i}">
-          <b data-i="${i}" title="Apply this view">${esc(v.name)}</b>
-          <span class="del" data-i="${i}" title="Delete this view">×</span>
+          <b data-i="${i}" role="button" tabindex="0" title="Apply this view" aria-label="Apply view ${esc(v.name)}">${esc(v.name)}</b>
+          <span class="del" data-i="${i}" role="button" tabindex="0" title="Delete this view" aria-label="Delete view ${esc(v.name)}">×</span>
         </span>`
       )
       .join("") || `<span class="views-empty">NO SAVED VIEWS YET</span>`;
+  // Neither <b> nor <span> is a native button -- same shared-handler
+  // pattern as the sort headers above, so Enter/Space reuses the exact
+  // logic the click listener already runs instead of duplicating it.
   $("#views-list").querySelectorAll("b[data-i]").forEach((el) => {
-    el.addEventListener("click", () => applyView(views[+el.dataset.i]));
+    const activate = () => applyView(views[+el.dataset.i]);
+    el.addEventListener("click", activate);
+    el.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      activate();
+    });
   });
   $("#views-list").querySelectorAll(".del").forEach((el) => {
-    el.addEventListener("click", (e) => {
+    const activate = (e) => {
       e.stopPropagation();
       deleteView(+el.dataset.i);
+    };
+    el.addEventListener("click", activate);
+    el.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      activate(e);
     });
   });
 }
@@ -569,7 +605,7 @@ function render() {
         .join("");
       const watched = isWatched(state.slug, r.key);
       return `<tr class="${r.rank === 1 ? "top1" : ""}">
-        <td class="watch-cell${watched ? " on" : ""}" data-key="${r.key}">${watched ? "★" : "☆"}</td>
+        <td class="watch-cell${watched ? " on" : ""}" data-key="${r.key}" role="button" tabindex="0" aria-pressed="${watched}" aria-label="${watched ? "Unwatch" : "Watch"} ${esc(r.name)}">${watched ? "★" : "☆"}</td>
         <td class="rankcell left">${String(r.rank).padStart(2, "0")}</td>${tds}</tr>`;
     })
     .join("");
@@ -594,6 +630,20 @@ function sortPanelRows(rows, sort) {
   });
 }
 
+// Panel rows have no fixed shape (WHALE MOVES' free-text fields are
+// "fund"/"security", not "name" like the main board), so there's no single
+// field to read a human-readable label from for a watch star's aria-label
+// -- built generically from whichever fields the panel itself already
+// declares as text, the same "no hardcoded key" approach test_live.py's
+// entity-leak check uses for the same reason.
+function panelRowLabel(p, r) {
+  return p.columns
+    .filter((c) => c.fmt === "text" || c.fmt === "url")
+    .map((c) => r[c.field])
+    .filter(Boolean)
+    .join(" ") || "row";
+}
+
 function renderPanel() {
   const panels = state.panels || [];
   $("#panels-container").innerHTML = panels
@@ -611,13 +661,14 @@ function renderPanel() {
         p.columns
           .map(
             (c) =>
-              `<th class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}" data-panel="${i}" data-sort="${c.field}">${esc(c.label)}</th>`
+              `<th class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}" data-panel="${i}" data-sort="${c.field}" role="button" tabindex="0">${esc(c.label)}</th>`
           )
           .join("");
       const body = rows
         .map((r) => {
+          const watched = isWatched(state.slug, r.key);
           const star = watchable
-            ? `<td class="watch-cell${isWatched(state.slug, r.key) ? " on" : ""}" data-panel-key="${esc(r.key)}">${isWatched(state.slug, r.key) ? "★" : "☆"}</td>`
+            ? `<td class="watch-cell${watched ? " on" : ""}" data-panel-key="${esc(r.key)}" role="button" tabindex="0" aria-pressed="${watched}" aria-label="${watched ? "Unwatch" : "Watch"} ${esc(panelRowLabel(p, r))}">${watched ? "★" : "☆"}</td>`
             : "";
           return (
             "<tr>" +
@@ -653,6 +704,15 @@ $("#panels-container").addEventListener("click", (e) => {
   const cur = panelSort[i];
   panelSort[i] = cur && cur.key === key ? { key, dir: -cur.dir } : { key, dir: -1 };
   renderPanel();
+});
+// Same non-button-element gap as #rows' watch star above, plus the panel's
+// own sort headers -- neither a <td> nor a <th> gets Enter/Space for free.
+$("#panels-container").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const target = e.target.closest(".watch-cell, th[data-sort]");
+  if (!target) return;
+  e.preventDefault();
+  target.click();
 });
 
 /* ── merged feed ────────────────────────────── */

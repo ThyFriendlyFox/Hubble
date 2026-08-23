@@ -109,7 +109,7 @@ registration requirement for this exact data, a ToS/legal judgment call, not
 a technical one — not mine to make unilaterally in an unattended loop.
 
 If all the named sources are still blocked (expect this), read `ROADMAP.md`
-for what's already done, then look for real, previously-unflagged gaps. Five
+for what's already done, then look for real, previously-unflagged gaps. Six
 fallback avenues have each already had a full pass and are exhausted for
 now — don't default back into any of them without a genuinely new angle
 (new code that could have introduced new drift, a specific claim worth
@@ -199,6 +199,26 @@ re-checking, a section of the app never yet touched):
    parsing while reading identically to a human. All three output channels
    are now checked; worth a re-check if a new one is ever added, or if any
    existing one starts embedding raw external text somewhere new.
+6. **Keyboard/screen-reader operability of custom (non-native) interactive
+   elements.** Distinct from avenue 3, which only ever drove controls with a
+   mouse click — never checked whether the same controls work without one.
+   The watch star (a `<td>`), the sort headers (a `<th>`), and the SAVE VIEW
+   chip's apply/delete actions (a `<b>`/`<span>`) are all click-only: none of
+   them is a native `<button>`, so none gets keyboard focus or Enter/Space
+   activation for free, and none had a `role`/`aria-label`/`aria-pressed`
+   telling a screen reader what it does. That made the watchlist — arguably
+   this app's single most load-bearing cross-cutting feature, the thing the
+   cross-telescope watched-only feed filter is built on — completely
+   unusable without a mouse. Fixed with `role="button"`/`tabindex="0"` plus a
+   `keydown` handler that reuses the existing click logic (`el.click()` from
+   inside the delegated listeners, a shared named function where listeners
+   are wired per-element) rather than duplicating it, and `aria-pressed`/
+   `aria-label` built from each row's own `name` (main table) or its panel's
+   own declared text columns (panels have no fixed shape, so no field name
+   could be hardcoded). Verified live via real `KeyboardEvent`s (focus +
+   Enter, focus + Space), not just reasoned about — confirmed on both the
+   main table and a panel (Jackson's CAPABILITY AREAS). One pass so far;
+   worth a re-check if a new custom control is ever added.
 
 `static/app.js`'s pure/DOM-free logic has real coverage — `tests_js/`, using
 Node's built-in `node:test`/`node:vm` (already on the machine, zero npm
