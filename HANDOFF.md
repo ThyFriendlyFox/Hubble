@@ -7,16 +7,18 @@ anything.
 
 ## State
 
-Six telescopes (Hubble, Jackson, Simons, Kepler, Holmdel, Reddington) run on
-live public data, no API keys. Kernel in `telescope/`, one domain pack per
-telescope in `observatories/`, one generic frontend driven entirely by
-telescope metadata. 119 kernel tests + 101 domain-pack tests + 92 live tests
-+ 33 zero-dependency Node tests covering every DOM-free function in
-static/app.js (check the actual counts with `-q` / `node --test`, don't
-trust these numbers for long).
+Seven telescopes (Hubble, Jackson, Simons, Kepler, Holmdel, Reddington,
+Pasteur) run on live public data, no API keys. Kernel in `telescope/`, one
+domain pack per telescope in `observatories/`, one generic frontend driven
+entirely by telescope metadata. 133 kernel tests + 122 domain-pack tests +
+104 live tests + 33 zero-dependency Node tests covering every DOM-free
+function in static/app.js (check the actual counts with `-q` / `node
+--test`, don't trust these numbers for long).
 
-Every Phase 0–4 roadmap item (the six telescopes and their core signals) is
-shipped. Phase 5 (hardening) closed out a long tail of real bugs found by
+Every Phase 0–4 roadmap item (the original six telescopes and their core
+signals) is shipped; Pasteur, a seventh, landed later (Phase 9) with its own
+web crawler and PageRank kernel primitives. Phase 5 (hardening) closed out a
+long tail of real bugs found by
 testing against live data rather than just reading code — cache-poisoning
 resilience, poller/scheduler retry correctness, cross-telescope joins that
 could silently trigger a sweep, a frontend stale-data race, dead sources
@@ -113,12 +115,16 @@ now — don't default back into any of them without a genuinely new angle
 (new code that could have introduced new drift, a specific claim worth
 re-checking, a section of the app never yet touched):
 
-1. **Extend test coverage.** Done — the entire Python codebase is
-   individually audited, and every DOM-free function in `static/app.js` now
-   has real coverage too (see below). Every remaining gap is a
-   deliberately-judged omission (Python) or would need a real DOM shim
-   (the rendering/event-wiring half of app.js) — won't find anything new
-   without either new code to cover or that bigger framework decision.
+1. **Extend test coverage.** Done for everything that predates Pasteur — the
+   rest of the Python codebase is individually audited, and every DOM-free
+   function in `static/app.js` has real coverage too (see below). Every
+   remaining gap there is a deliberately-judged omission (Python) or would
+   need a real DOM shim (the rendering/event-wiring half of app.js).
+   Pasteur itself (`telescope/crawl.py`, `telescope/graph.py`,
+   `observatories/pasteur.py`) shipped with unit tests for its own pure
+   logic and kernel primitives, but hasn't been through a dedicated
+   coverage.py pass the way the rest of the codebase was — a real,
+   legitimately fresh angle for a future iteration, not yet exhausted.
 2. **Verify a documentation file against reality.** Done for
    `TELESCOPES.md`, `README.md`, and every domain pack's own module
    docstring. `ROADMAP.md` is generated so it can't drift; `app.js`/

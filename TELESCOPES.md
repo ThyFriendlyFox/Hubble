@@ -183,6 +183,31 @@ network-inward; Kepler is signal-detection, outside-in. The overlap report
 
 ---
 
+### 🧬 Pasteur — biotech *(operational)*
+
+*Louis Pasteur turned disease from a mystery into something trackable. This
+telescope tracks the modern version: which companies have a real
+clinical-trial pipeline moving, and which of them the press is already
+paying disproportionate attention to before that shows up in the trial data
+itself.*
+
+The one telescope with a genuine web crawler rather than a known API as one
+of its sources — `telescope/crawl.py` (robots.txt-respecting, rate-limited,
+hard-capped at 40 pages/sweep) and `telescope/graph.py` (PageRank, i.e. the
+Markov chain whose stationary distribution *is* the ranking) are both new
+kernel primitives, reusable by any future telescope that needs them.
+
+| | |
+|---|---|
+| **Entity** | A trial sponsor company. |
+| **Join key** | Lead sponsor name (ClinicalTrials.gov's own field), normalised (lowercased, one trailing corporate-form suffix like "Inc."/"LLC" stripped) for matching against crawled press-release text. |
+| **Sources (all free, no keys)** | ClinicalTrials.gov API v2 — the ~500 most recently updated `RECRUITING`/`ACTIVE_NOT_RECRUITING` studies, not the full ~87K-study registry, joined by lead sponsor · BioSpace (crawled) — a small, seeded crawl of its own press-release network (`news-sitemap-content.xml` for discovery, then real page fetches following real `<a href>` links), chosen because it's the one biotech-news domain checked whose robots.txt explicitly permits crawling (with a published `Crawl-delay: 1`, honoured exactly) — a second candidate (FierceBiotech) looked plausible but wasn't verified in depth, a third (Endpoints News) actively blocks generic HTTP clients via a CloudFront WAF. A public PDUFA calendar was considered and deliberately not built — the FDA publishes no forward-looking one, and every aggregator that has one (BiopharmaWatch, RTT News) is a paid product with no free tier. |
+| **Signals** | trial pipeline size (log-scaled count) · phase advance (most-advanced trial's phase, numeric-encoded) · press centrality (PageRank score over the crawled graph, rescaled so an "average" crawled page scores ~1.0, log-scaled) |
+| **Events** | `new_entrant` · `phase_3` (a sponsor's most-advanced trial crosses into Phase 3 — the closest honest substitute for "approaching approval" without a PDUFA date) · `crossing_over` (press centrality elevated last sweep, trial pipeline newly grown this sweep — press attention as a leading indicator, Holmdel's own `crossing_over` shape reused) · `new_leader` |
+| **Hard part** | The crawl's own scope. Bounded to one outlet and ~40 pages/sweep on purpose — respecting a real site's crawl-delay honestly means not trying to cover "the whole web," so PRESS CENTRALITY reflects visibility within this one outlet's coverage, not global importance, and most sponsors the crawl never reaches score zero on it (stated honestly in the caveat, not left to look like "no attention"). |
+
+---
+
 ## 4. The three hard problems (ranked)
 
 Porting a telescope is easy or hard in direct proportion to these, so check

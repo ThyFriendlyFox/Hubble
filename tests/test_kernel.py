@@ -19,7 +19,7 @@ from unittest.mock import patch                                  # noqa: E402
 import requests                                                   # noqa: E402
 
 from telescope import brief, http, notifier, ranking, registry    # noqa: E402
-from telescope import series                                     # noqa: E402
+from telescope import crawl, graph, series                       # noqa: E402
 from telescope.base import Telescope                             # noqa: E402
 from telescope.cache import Cache                                # noqa: E402
 from telescope.parse import to_float                             # noqa: E402
@@ -1616,6 +1616,142 @@ def test_to_float_handles_none_and_bad_types():
     assert to_float(None) is None
     assert to_float("not a number") is None
     assert to_float("3.5") == 3.5
+
+
+# ── pagerank / Markov chain (telescope/graph.py) ─────────────────────────
+def test_pagerank_symmetric_cycle_gives_equal_scores():
+    """A -> B -> C -> A: every node has exactly one inlink and one outlink,
+    so the stationary distribution must be uniform regardless of damping."""
+    edges = {"a": ["b"], "b": ["c"], "c": ["a"]}
+    scores = graph.pagerank(edges)
+    assert scores["a"] == scores["b"] == scores["c"]
+    assert abs(sum(scores.values()) - 1.0) < 1e-6
+
+
+def test_pagerank_ranks_a_heavily_inlinked_node_above_an_isolated_one():
+    """b and c both point at a; d points at nobody and nobody points at d --
+    a must clearly outrank the node with zero inlinks."""
+    edges = {"b": ["a"], "c": ["a"], "d": []}
+    scores = graph.pagerank(edges)
+    assert scores["a"] > scores["d"]
+    assert scores["a"] > scores["b"]
+
+
+def test_pagerank_redistributes_dangling_node_mass_rather_than_losing_it():
+    """b has no outlinks at all ("dangling") -- without redistributing its
+    rank mass back into the system every iteration, the total would leak
+    below 1.0 a little more each pass instead of converging there."""
+    edges = {"a": ["b"], "b": []}
+    scores = graph.pagerank(edges)
+    assert abs(sum(scores.values()) - 1.0) < 1e-6
+
+
+def test_pagerank_includes_link_targets_that_never_appear_as_a_key():
+    """c is only ever linked *to*, never a key in `edges` -- it still needs
+    a score (zero outlinks of its own), not to be silently dropped."""
+    edges = {"a": ["c"], "b": ["c"]}
+    scores = graph.pagerank(edges)
+    assert "c" in scores
+    assert scores["c"] > scores["a"]
+
+
+def test_pagerank_empty_graph_returns_empty():
+    assert graph.pagerank({}) == {}
+
+
+# ── crawler (telescope/crawl.py) ─────────────────────────────────────────
+def test_extract_links_resolves_relative_hrefs_against_base_url():
+    html = '<a href="/b">b</a><a href="https://example.com/c">c</a><a>no href</a>'
+    links = crawl._extract_links(html, "https://example.com/a")
+    assert links == ["https://example.com/b", "https://example.com/c"]
+
+
+def test_extract_links_survives_malformed_html():
+    """A parser choking partway through shouldn't lose links already found,
+    or crash the crawl over one bad page."""
+    html = '<a href="/ok">ok</a><div class="unclosed'
+    links = crawl._extract_links(html, "https://example.com/")
+    assert links == ["https://example.com/ok"]
+
+
+def test_robots_allow_respects_a_disallow_rule():
+    robots_txt = "User-agent: *\nDisallow: /private/\n"
+    with patch.object(crawl, "try_text", return_value=robots_txt):
+        crawl._robots_cache.clear()
+        assert crawl.robots_allow("https://example.com/private/x") is False
+        assert crawl.robots_allow("https://example.com/public/x") is True
+
+
+def test_robots_allow_fails_open_when_robots_txt_is_missing():
+    """No robots.txt to fetch means no rules exist to violate -- this must
+    not be treated the same as a blanket Disallow."""
+    with patch.object(crawl, "try_text", return_value=None):
+        crawl._robots_cache.clear()
+        assert crawl.robots_allow("https://example.com/anything") is True
+
+
+def test_robots_allow_fetches_each_domain_at_most_once():
+    """Confirmed by call count, not just behavior -- re-fetching robots.txt
+    on every single page checked would defeat the whole point of a cache
+    and multiply requests to a domain that only ever needs asking once."""
+    robots_txt = "User-agent: *\nAllow: /\n"
+    with patch.object(crawl, "try_text", return_value=robots_txt) as mock_fetch:
+        crawl._robots_cache.clear()
+        crawl.robots_allow("https://example.com/a")
+        crawl.robots_allow("https://example.com/b")
+        crawl.robots_allow("https://example.com/c")
+        assert mock_fetch.call_count == 1
+
+
+def test_crawl_stops_at_max_pages_even_with_more_links_discoverable():
+    """Found live, not in a test: an unbounded crawl is exactly the kind of
+    silent-unbounded-work bug this project has already hit once with
+    OpenAlex's sweep -- this is the regression test that proves the cap
+    actually holds, the same way that fix got one."""
+    def fake_fetch(url, default=None, **kw):
+        n = int(url.rsplit("/", 1)[-1])
+        return f'<a href="https://example.com/page/{n + 1}">next</a>'
+
+    with patch.object(crawl, "try_text", side_effect=fake_fetch), \
+         patch.object(crawl, "robots_allow", return_value=True), \
+         patch("time.sleep"):
+        result = crawl.crawl(["https://example.com/page/0"], max_pages=5)
+    assert len(result) == 5
+
+
+def test_crawl_skips_pages_robots_txt_disallows_without_counting_them():
+    def fake_fetch(url, default=None, **kw):
+        return '<a href="https://example.com/other">x</a>'
+
+    with patch.object(crawl, "try_text", side_effect=fake_fetch), \
+         patch.object(crawl, "robots_allow", return_value=False), \
+         patch("time.sleep"):
+        result = crawl.crawl(["https://example.com/blocked"], max_pages=10)
+    assert result == {}
+
+
+def test_crawl_link_filter_bounds_the_frontier_not_the_recorded_edges():
+    """A page's own discovered links are all real edges in the graph even
+    when link_filter rejects most of them for further crawling -- the
+    filter decides what gets *visited* next, not what gets *recorded*."""
+    def fake_fetch(url, default=None, **kw):
+        if url == "https://example.com/seed":
+            return ('<a href="https://example.com/relevant">a</a>'
+                    '<a href="https://example.com/irrelevant">b</a>')
+        return ""
+
+    with patch.object(crawl, "try_text", side_effect=fake_fetch), \
+         patch.object(crawl, "robots_allow", return_value=True), \
+         patch("time.sleep"):
+        result = crawl.crawl(
+            ["https://example.com/seed"], max_pages=10,
+            link_filter=lambda u: "relevant" in u and "irrelevant" not in u,
+        )
+    assert result["https://example.com/seed"] == [
+        "https://example.com/relevant", "https://example.com/irrelevant",
+    ]
+    assert "https://example.com/relevant" in result
+    assert "https://example.com/irrelevant" not in result
 
 
 # ── notifier ─────────────────────────────────────────────────────────────

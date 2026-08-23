@@ -29,6 +29,10 @@ from observatories.jackson import Jackson                         # noqa: E402
 from observatories.kepler import (Kepler, _core_name,             # noqa: E402
                                   _distinctive_enough,
                                   _looks_like_the_company, _slug)
+from observatories import pasteur                                 # noqa: E402
+from observatories.pasteur import (Pasteur, _aggregate_by_sponsor,  # noqa: E402
+                                   _centrality, _normalize_name,
+                                   _parse_sitemap)
 from observatories.reddington import Reddington                   # noqa: E402
 from observatories.simons import Simons                           # noqa: E402
 
@@ -1698,5 +1702,250 @@ def test_context_is_none_when_no_gauge_is_volume_or_fuel():
     try:
         with patch.object(red, "collect", return_value=rows):
             assert red.context(force=True) is None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PASTEUR
+# ═══════════════════════════════════════════════════════════════════════
+# The one domain pack that fetches from a real crawl (telescope/crawl.py)
+# rather than a single known API -- crawl.crawl() itself is already fully
+# tested in test_kernel.py with a mocked http layer, so what's tested here
+# is Pasteur's own business logic: joining ClinicalTrials.gov records by
+# sponsor, parsing BioSpace's sitemap, and matching crawled pages back to
+# sponsor names -- all pure/deterministic, none of it touching the network.
+def _isolated_pasteur():
+    """A fresh Pasteur instance with its disk cache redirected to a
+    throwaway tmp dir -- never touches data/pasteur/, the real singleton's
+    cache."""
+    pas = Pasteur()
+    tmp = tempfile.mkdtemp()
+    pas.cache.dir = tmp
+    return pas, tmp
+
+
+# ── _normalize_name(): fuzzy sponsor-name matching ───────────────────────
+def test_normalize_name_strips_one_trailing_corporate_suffix():
+    assert _normalize_name("Merck Sharp & Dohme LLC") == "merck sharp & dohme"
+    assert _normalize_name("Genentech, Inc.") == "genentech"
+    assert _normalize_name("Vertex Pharmaceuticals Incorporated") == "vertex pharmaceuticals"
+
+
+def test_normalize_name_does_not_strip_domain_words():
+    """"Therapeutics"/"Pharmaceuticals" are part of the actual company name,
+    not a generic corporate-form suffix -- stripping them would make
+    unrelated companies collide on the same normalized name."""
+    assert _normalize_name("Acme Therapeutics") == "acme therapeutics"
+    assert _normalize_name("Acme Pharmaceuticals") == "acme pharmaceuticals"
+
+
+def test_normalize_name_is_case_insensitive():
+    assert _normalize_name("PFIZER INC") == _normalize_name("Pfizer Inc.")
+
+
+# ── _aggregate_by_sponsor(): pure join, no network ───────────────────────
+def _study(sponsor, phase="PHASE1", condition="Lymphoma", updated="2026-08-01"):
+    return {
+        "protocolSection": {
+            "sponsorCollaboratorsModule": {"leadSponsor": {"name": sponsor}},
+            "designModule": {"phases": [phase]},
+            "conditionsModule": {"conditions": [condition]},
+            "statusModule": {"lastUpdatePostDateStruct": {"date": updated}},
+        }
+    }
+
+
+def test_aggregate_by_sponsor_counts_trials_per_sponsor():
+    trials = [_study("Acme Bio"), _study("Acme Bio"), _study("Other Bio")]
+    agg = _aggregate_by_sponsor(trials)
+    assert agg["Acme Bio"]["trial_count"] == 2
+    assert agg["Other Bio"]["trial_count"] == 1
+
+
+def test_aggregate_by_sponsor_takes_the_most_advanced_phase():
+    trials = [_study("Acme Bio", phase="PHASE1"), _study("Acme Bio", phase="PHASE3")]
+    agg = _aggregate_by_sponsor(trials)
+    assert agg["Acme Bio"]["max_phase"] == pasteur.PHASE_RANK["PHASE3"]
+
+
+def test_aggregate_by_sponsor_skips_studies_with_no_sponsor_name():
+    trials = [{"protocolSection": {}}, _study("Acme Bio")]
+    agg = _aggregate_by_sponsor(trials)
+    assert list(agg.keys()) == ["Acme Bio"]
+
+
+def test_aggregate_by_sponsor_dedupes_conditions_and_keeps_latest_update():
+    trials = [
+        _study("Acme Bio", condition="Lymphoma", updated="2026-08-01"),
+        _study("Acme Bio", condition="Lymphoma", updated="2026-08-15"),
+        _study("Acme Bio", condition="Leukemia", updated="2026-07-01"),
+    ]
+    agg = _aggregate_by_sponsor(trials)
+    assert agg["Acme Bio"]["conditions"] == {"Lymphoma", "Leukemia"}
+    assert agg["Acme Bio"]["last_update"] == "2026-08-15"
+
+
+def test_aggregate_by_sponsor_defaults_missing_phase_to_not_applicable():
+    trials = [{"protocolSection": {
+        "sponsorCollaboratorsModule": {"leadSponsor": {"name": "Acme Bio"}},
+    }}]
+    agg = _aggregate_by_sponsor(trials)
+    assert agg["Acme Bio"]["max_phase"] == pasteur.PHASE_RANK["NA"]
+
+
+# ── _parse_sitemap(): pure XML parse, no network ─────────────────────────
+def _sitemap_xml(entries):
+    urls = "".join(
+        f'<url><loc>{loc}</loc><lastmod>{lastmod}</lastmod>'
+        f'<news:news><news:title>{title}</news:title>'
+        f'<news:keywords>{kw}</news:keywords></news:news></url>'
+        for loc, lastmod, title, kw in entries
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" '
+        'xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">'
+        f'{urls}</urlset>'
+    )
+
+
+def test_parse_sitemap_extracts_fields_and_sorts_most_recent_first():
+    xml = _sitemap_xml([
+        ("https://www.biospace.com/a", "2026-08-01T00:00:00-04:00", "A Announces X", "kw1"),
+        ("https://www.biospace.com/b", "2026-08-20T00:00:00-04:00", "B Announces Y", "kw2"),
+    ])
+    items = _parse_sitemap(xml)
+    assert [i["url"] for i in items] == [
+        "https://www.biospace.com/b", "https://www.biospace.com/a",
+    ]
+    assert items[0]["title"] == "B Announces Y"
+    assert items[0]["keywords"] == "kw2"
+
+
+def test_parse_sitemap_returns_empty_list_on_malformed_xml():
+    assert _parse_sitemap("<not><valid") == []
+
+
+def test_parse_sitemap_caps_at_max_press_items():
+    entries = [
+        (f"https://www.biospace.com/{i}", f"2026-08-{i:02d}T00:00:00-04:00", "T", "k")
+        for i in range(1, 3)
+    ]
+    with patch.object(pasteur, "MAX_PRESS_ITEMS", 1):
+        items = _parse_sitemap(_sitemap_xml(entries))
+    assert len(items) == 1
+    assert items[0]["url"] == "https://www.biospace.com/2"   # the more recent one
+
+
+# ── _centrality(): PageRank scores attributed back to sponsor names ──────
+def test_centrality_attributes_score_via_known_title_and_keywords():
+    graph = {"https://www.biospace.com/a": ["https://www.biospace.com/b"]}
+    press_lookup = {
+        "https://www.biospace.com/a": "acme bio raises funding",
+        "https://www.biospace.com/b": "acme bio phase 3 results",
+    }
+    centrality = _centrality(graph, press_lookup, ["Acme Bio", "Other Bio"])
+    assert centrality["Acme Bio"] > 0
+    assert "Other Bio" not in centrality
+
+
+def test_centrality_falls_back_to_url_slug_for_unknown_pages():
+    """A page the crawl discovered by following a link, but which wasn't in
+    the original sitemap sample, has no known title/keywords -- matching
+    must fall back to the URL's own slug rather than silently attributing
+    nothing."""
+    graph = {"https://www.biospace.com/seed": ["https://www.biospace.com/acme-bio-update"]}
+    centrality = _centrality(graph, {}, ["Acme Bio"])
+    assert centrality["Acme Bio"] > 0
+
+
+def test_centrality_returns_empty_for_an_empty_graph():
+    assert _centrality({}, {}, ["Acme Bio"]) == {}
+
+
+# ── collect(): the full join, network mocked ─────────────────────────────
+def _trials_page(studies, next_token=None):
+    result = {"studies": studies}
+    if next_token:
+        result["nextPageToken"] = next_token
+    return result
+
+
+def test_collect_builds_one_row_per_sponsor_with_expected_shape():
+    pas, tmp = _isolated_pasteur()
+    trials_response = _trials_page([_study("Acme Bio", phase="PHASE2")])
+    try:
+        with patch.object(pasteur, "try_json", return_value=trials_response), \
+             patch.object(pasteur, "try_text", return_value=None), \
+             patch.object(pasteur, "crawl_web", return_value={}):
+            rows = pas.collect(force=True)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["name"] == "Acme Bio"
+        assert row["trial_count"] == 1
+        assert row["phase_label"] == "Phase 2"
+        assert row["key"] == "acme bio"
+        assert row["link"] == "https://clinicaltrials.gov/search?spons=Acme+Bio"
+        assert row["backlink_score"] == 0.0
+        assert row["noise"] is False
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_collect_paginates_trials_until_no_next_page_token():
+    pas, tmp = _isolated_pasteur()
+    pages = [
+        _trials_page([_study("Acme Bio")], next_token="p2"),
+        _trials_page([_study("Other Bio")]),
+    ]
+    try:
+        with patch.object(pasteur, "try_json", side_effect=pages), \
+             patch.object(pasteur, "try_text", return_value=None), \
+             patch.object(pasteur, "crawl_web", return_value={}):
+            rows = pas.collect(force=True)
+        assert {r["name"] for r in rows} == {"Acme Bio", "Other Bio"}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_collect_stops_paginating_at_max_trial_pages_even_with_more_available():
+    """A source that always returns a nextPageToken must not turn one sweep
+    into an unbounded fetch loop."""
+    pas, tmp = _isolated_pasteur()
+    calls = {"n": 0}
+
+    def fake_try_json(url, default=None, **kw):
+        calls["n"] += 1
+        return _trials_page([_study(f"Sponsor {calls['n']}")], next_token="more")
+
+    try:
+        with patch.object(pasteur, "try_json", side_effect=fake_try_json), \
+             patch.object(pasteur, "try_text", return_value=None), \
+             patch.object(pasteur, "crawl_web", return_value={}):
+            pas.collect(force=True)
+        assert calls["n"] == pasteur.MAX_TRIAL_PAGES
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_collect_wires_real_backlink_scores_into_rows():
+    """End-to-end (with crawl_web mocked, since crawl.crawl() itself is
+    tested in test_kernel.py): a sponsor whose press release the crawl
+    reaches ends up with a real, non-zero backlink_score on its row."""
+    pas, tmp = _isolated_pasteur()
+    trials_response = _trials_page([_study("Acme Bio")])
+    sitemap = _sitemap_xml([
+        ("https://www.biospace.com/acme", "2026-08-20T00:00:00-04:00",
+         "Acme Bio Announces Results", "biotech"),
+    ])
+    graph = {"https://www.biospace.com/acme": []}
+    try:
+        with patch.object(pasteur, "try_json", return_value=trials_response), \
+             patch.object(pasteur, "try_text", return_value=sitemap), \
+             patch.object(pasteur, "crawl_web", return_value=graph):
+            rows = pas.collect(force=True)
+        row = next(r for r in rows if r["name"] == "Acme Bio")
+        assert row["backlink_score"] > 0
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
