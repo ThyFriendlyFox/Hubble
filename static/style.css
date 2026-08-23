@@ -38,6 +38,23 @@ body {
   overflow-x: hidden;
 }
 
+/* ── skip link ─────────────────────────────── */
+/* The header nav (5 tabs + REFRESH) plus the telescope switcher strip
+   below it is 13 focusable stops a keyboard user has to Tab through on
+   every single visit before reaching any actual content -- exactly the
+   repeated-block problem WCAG 2.4.1 (Bypass Blocks) exists for. Off-screen
+   by default (not display:none/visibility:hidden, which would also hide
+   it from a screen reader), pulled on-screen only on :focus so a sighted
+   keyboard user can see it appear at the very top of Tab order. */
+.skip-link {
+  position: absolute; top: -100%; left: 8px; z-index: 200;
+  background: var(--paper); color: #000; padding: 10px 16px;
+  font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 600;
+  letter-spacing: 1px; text-decoration: none; text-transform: uppercase;
+}
+.skip-link:focus { top: 8px; }
+#main-content:focus-visible { outline: 2px solid var(--paper); outline-offset: -2px; }
+
 /* ── isometric line field ─────────────────── */
 .iso-bg {
   position: fixed; inset: 0; z-index: 0; pointer-events: none;

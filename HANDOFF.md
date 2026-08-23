@@ -313,8 +313,30 @@ re-checking, a section of the app never yet touched):
    rewritten by `app.js` on every telescope switch) still update correctly
    inside their new `<h2>` wrapper, and that a real panel (Jackson's
    CAPABILITY AREAS) renders its own heading/`aria-labelledby` pair
-   correctly. Six passes so far; worth a re-check if a new custom control,
-   color, animation, or top-level section is ever added.
+   correctly. A seventh pass checked the sequence a keyboard user has to Tab
+   through before reaching anything, not the content itself: the header nav
+   (5 tabs + REFRESH) plus the telescope switcher strip is 13 focusable
+   stops on every single visit before reaching any real content — exactly
+   the repeated-block problem WCAG 2.4.1 (Bypass Blocks) exists for, and no
+   skip link existed at all. Added one as the very first element in `<body>`
+   (`<a href="#main-content" class="skip-link">`), positioned off-screen by
+   default and pulled into view only on `:focus` so it's invisible to sighted
+   mouse users but reachable and visible to keyboard users, jumping to a
+   `<main id="main-content" tabindex="-1">`. This session's browser pane hit
+   a real tooling wall verifying it live — `document.visibilityState` got
+   stuck `"hidden"` (survived a reload, a resize, and re-fronting the tab),
+   which blocked genuine keyboard-driven `Tab`/`Enter` dispatch entirely, a
+   different failure mode from the scripted-`.focus()` quirks earlier passes
+   hit. Routed around it with a still-legitimate test: dispatched a real
+   `.click()` on the anchor itself (exercising the browser's actual,
+   spec-defined fragment-navigation behavior, not a workaround) and
+   confirmed it moved both scroll position and `document.activeElement` to
+   `#main-content` — and, unexpectedly useful, confirmed `:focus-visible`
+   *does* match and apply the intended outline in this case, since browsers
+   specifically treat focus-following-a-link as visible-worthy regardless of
+   input device, unlike a bare scripted `element.focus()` call. Seven passes
+   so far; worth a re-check if a new custom control, color, animation, or
+   top-level section is ever added.
 
 `static/app.js`'s pure/DOM-free logic has real coverage — `tests_js/`, using
 Node's built-in `node:test`/`node:vm` (already on the machine, zero npm
