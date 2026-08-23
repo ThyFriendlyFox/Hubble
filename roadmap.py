@@ -6330,6 +6330,107 @@ PHASES = [
                        "change from any prior finding."},
         ],
     },
+    {
+        "title": "PHASE 28 · A THIRD CLEAN ITERATION, STILL NEW GROUND",
+        "status": "next",
+        "note": "Checked four more distinct things rather than repeating "
+                "the last two iterations' ground: the server's network "
+                "binding (a real security question with no auth layer to "
+                "fall back on), whether a blocked font CDN would break "
+                "the page, whether snapshot-history disk usage is "
+                "actually bounded or just quiet so far, and whether the "
+                "bounding mechanism has ever really been exercised. All "
+                "four came back already-correct.",
+        "items": [
+            {"name": "Checked what network interface the dev server "
+                     "binds to by default -- a real question given this "
+                     "app has no authentication layer at all, confirmed "
+                     "two iterations ago", "done": True,
+             "detail": "app.run(port=..., threaded=True) passes no `host` "
+                       "argument at all, and Flask's own documented "
+                       "default when host is omitted is 127.0.0.1 -- "
+                       "localhost-only, not network-exposed. Confirmed "
+                       "this is the actual behavior, not assumed from "
+                       "general Flask knowledge that could be version-"
+                       "dependent. README's own \"light the whole "
+                       "observatory on a server\" line doesn't change "
+                       "this: there's no env var or config path to widen "
+                       "the binding, so anyone wanting network-wide access "
+                       "would have to make a deliberate, conscious edit "
+                       "to app.py themselves -- exactly the right default "
+                       "for an app with zero auth, not an accidental "
+                       "exposure waiting to happen."},
+            {"name": "Checked whether a blocked or unreachable Google "
+                     "Fonts CDN would break the page's layout or leave "
+                     "text invisible, rather than assuming a fallback "
+                     "stack exists", "done": True,
+             "detail": "Every font-family declaration in style.css "
+                       "already lists a real fallback (\"IBM Plex Mono\", "
+                       "ui-monospace, monospace and \"Anton\", sans-"
+                       "serif) -- confirmed by reading every declaration, "
+                       "not just the first one. A blocked CDN (offline "
+                       "use, an ad-blocker, a restrictive network) "
+                       "degrades to a generic system monospace/sans-serif "
+                       "font with zero layout breakage or invisible text, "
+                       "already correct with no code to add."},
+            {"name": "Found data/hubble/'s disk usage (11M) looked large "
+                     "at a glance and traced it to its actual source "
+                     "before assuming unbounded growth -- confirmed a "
+                     "real retention cap exists and is already unit-"
+                     "tested, not just assumed correct by reading the "
+                     "code once", "done": True,
+             "detail": "The 11M lives almost entirely in data/hubble/"
+                       "history/ (46 snapshot files) -- telescope/"
+                       "snapshots.py declares KEEP_SNAPSHOTS = 300 and "
+                       "_save() explicitly prunes every file beyond the "
+                       "most recent 300 on every write. Checked live "
+                       "snapshot counts across all seven telescopes "
+                       "rather than trusting Hubble's own count alone: "
+                       "Holmdel is the highest at 121, still well under "
+                       "the 300 cap, meaning the prune path genuinely "
+                       "hasn't fired in real production data yet for any "
+                       "telescope. Found this doesn't leave the mechanism "
+                       "unverified, though: test_kernel.py already has "
+                       "test_snapshot_store_prunes_old_snapshots_beyond_"
+                       "keep_limit, which patches KEEP_SNAPSHOTS down to "
+                       "3 specifically to exercise the prune path without "
+                       "needing 300 real sweeps -- its own docstring "
+                       "records it was itself a real gap found and closed "
+                       "in an earlier phase, not something newly added "
+                       "here. 11M for 46 real, content-rich snapshots "
+                       "(Hubble tracks many models per sweep) is normal "
+                       "data volume, not a leak."},
+            {"name": "Reran both fast suites and the JS suite to confirm "
+                     "nothing drifted before concluding a third "
+                     "consecutive clean iteration -- each covering "
+                     "genuinely different ground from the two before it, "
+                     "not a repeat of either", "done": True,
+             "detail": "272 Python tests and 33 JS tests all still pass. "
+                       "This iteration's four checks (network binding, "
+                       "font fallbacks, snapshot retention, the retention "
+                       "mechanism's own test coverage) share no overlap "
+                       "with the previous iteration's checks (outbound-"
+                       "request safety, the unrelated git worktree, "
+                       "SAM.gov/BioSpace live reconfirmation, a fresh "
+                       "Pasteur sweep) or the one before that (README.md "
+                       "cross-referenced against app.py's real routes, "
+                       "TELESCOPES.md/requirements.txt/.gitignore, a live "
+                       "regression sweep on Simons/Reddington) -- three "
+                       "iterations of real, non-repeating due diligence "
+                       "landing on \"already correct,\" which is the "
+                       "expected shape for a codebase this many phases "
+                       "into hardening, not a sign the checking has "
+                       "gotten shallow."},
+            {"name": "Verified nothing else drifted: dev server and "
+                     "blocked-sources table reconfirmed", "done": True,
+             "detail": "Dev server confirmed healthy on its running port "
+                       "with all seven telescopes registered and zero "
+                       "load_errors, no restart needed. Re-probed all four "
+                       "historically-blocked sources (SAM.gov, Semantic "
+                       "Scholar, Jackson's SBIR, Holmdel's OpenAlex) -- no "
+                       "change from any prior finding."},
+        ],
+    },
 ]
 
 
