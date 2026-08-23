@@ -704,8 +704,8 @@ function renderPanel() {
           );
         })
         .join("");
-      return `<section>
-        <div class="section-label"><span>${String(4 + i).padStart(2, "0")}</span> <em>${esc(p.title)}</em></div>
+      return `<section aria-labelledby="panel-heading-${i}">
+        <h2 class="section-label" id="panel-heading-${i}"><span aria-hidden="true">${String(4 + i).padStart(2, "0")}</span> <em>${esc(p.title)}</em></h2>
         <div class="table-wrap">
           <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
         </div>

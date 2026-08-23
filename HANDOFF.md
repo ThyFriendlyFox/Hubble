@@ -288,9 +288,33 @@ re-checking, a section of the app never yet touched):
    computed `animation-iteration-count` actually drops from `infinite` to
    `1` (not just that the CSS parsed), then removed it and confirmed normal
    motion is completely unaffected (`animation-duration: 1s`,
-   `prefers-reduced-motion` correctly reads `false` in this environment).
-   Five passes so far; worth a re-check if a new custom control, color, or
-   animation is ever added.
+   `prefers-reduced-motion` correctly reads `false` in this environment). A
+   sixth pass moved from individual-widget accessibility to page-level
+   navigation structure: the whole app has exactly one heading (`<h1>` for
+   the wordmark) — every real section (TOP RANKED, WEIGHTING MATRIX, FULL
+   INDEX, every panel, and each of the other four tabs' own single section)
+   was a plain `.section-label` `<div>`, not a heading at all. Screen-reader
+   users navigate primarily by heading (WebAIM's own screen-reader survey
+   consistently ranks it the single most-used navigation method), so this
+   meant literally no way to jump directly to a section — only linear
+   reading. Fixed by changing `.section-label` from `<div>` to `<h2>`
+   everywhere (in `index.html`'s seven static sections and `renderPanel()`'s
+   dynamically-rendered ones) — a purely semantic change, zero visual risk,
+   since every layout/typography property `.section-label` needs is already
+   explicit in its own CSS rule. Also gave each `<section>` an accessible
+   name via `aria-labelledby` pointing at its heading, and marked the
+   decorative "01"/"02" numbering `aria-hidden="true"` (standard practice,
+   though this session's own accessibility-tree inspection tool doesn't
+   cleanly demonstrate the exclusion the spec calls for — noted as a tool
+   limitation, not evidence the markup is wrong, the same kind of
+   testing-environment nuance earlier passes in this avenue also hit and
+   correctly reasoned through rather than took as a bug). Verified live
+   that dynamically-updated headings (`#podium-label`/`#table-label`,
+   rewritten by `app.js` on every telescope switch) still update correctly
+   inside their new `<h2>` wrapper, and that a real panel (Jackson's
+   CAPABILITY AREAS) renders its own heading/`aria-labelledby` pair
+   correctly. Six passes so far; worth a re-check if a new custom control,
+   color, animation, or top-level section is ever added.
 
 `static/app.js`'s pure/DOM-free logic has real coverage — `tests_js/`, using
 Node's built-in `node:test`/`node:vm` (already on the machine, zero npm
