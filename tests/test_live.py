@@ -16,6 +16,7 @@ import re
 import shutil
 import sys
 import tempfile
+from unittest.mock import patch
 
 import pytest
 import requests
@@ -513,3 +514,162 @@ def test_api_sweep_forces_a_real_sweep_and_returns_the_right_shape(client):
     assert isinstance(data["events"], list)
     assert data["count"] == len(data["events"])
     assert data["error"] is None
+
+
+# ── background poller / brief scheduler ──────────────────────────────────
+# Neither of app.py's two background loops is ever driven by the Flask
+# route tests above (they're only ever started from __main__), and both
+# carry a documented, previously-real bug fix in their own docstrings --
+# `last[slug]`/`last` must only advance on success, or a transient failure
+# would silently not retry until the next full interval. That invariant had
+# no test pinning it. Fully mocked, no network and no real sleeping despite
+# living in this file: `time.sleep`/`time.time` are patched to run each
+# loop a fixed number of ticks before raising a sentinel to escape the
+# infinite `while True`.
+class _StopLoop(Exception):
+    pass
+
+
+def test_poller_retries_every_tick_after_failure_but_waits_after_success():
+    """Pins _poller()'s own documented fix: a failed sweep must not advance
+    last[slug], so the very next tick retries regardless of poll_seconds;
+    a successful sweep anchors last[slug] and blocks further sweeps until
+    poll_seconds genuinely elapses."""
+    errors = iter(["boom", "boom", None])
+    sweep_calls = {"n": 0}
+
+    class FakeScope:
+        poll_seconds = 100
+
+        def safe_sweep(self, notifier):
+            sweep_calls["n"] += 1
+            self._last_error = next(errors)
+            return []
+
+    fake = FakeScope()
+    times = iter([1000, 1010, 1020, 1020, 1030])
+    sleep_calls = {"n": 0}
+
+    def fake_sleep(seconds):
+        sleep_calls["n"] += 1
+        if sleep_calls["n"] >= 4:
+            raise _StopLoop
+
+    with patch.object(flask_app.registry, "enabled_slugs", return_value=["fake"]), \
+         patch.object(flask_app.registry, "get", return_value=fake), \
+         patch.object(flask_app.time, "time", side_effect=times), \
+         patch.object(flask_app.time, "sleep", side_effect=fake_sleep):
+        with pytest.raises(_StopLoop):
+            flask_app._poller()
+
+    # Ticks 1 and 2 fail and retry immediately; tick 3 succeeds and anchors
+    # last['fake']; tick 4 is correctly skipped -- not due for another 100s.
+    assert sweep_calls["n"] == 3
+
+
+def test_poller_skips_a_slug_that_vanishes_between_enabled_slugs_and_get():
+    """registry.get() raising KeyError for a slug enabled_slugs() just
+    returned (a real, if narrow, race with a toggle flip) must be skipped,
+    not crash the whole poller thread."""
+    sleep_calls = {"n": 0}
+
+    def fake_sleep(seconds):
+        sleep_calls["n"] += 1
+        raise _StopLoop
+
+    with patch.object(flask_app.registry, "enabled_slugs", return_value=["gone"]), \
+         patch.object(flask_app.registry, "get", side_effect=KeyError("gone")), \
+         patch.object(flask_app.time, "sleep", side_effect=fake_sleep):
+        with pytest.raises(_StopLoop):
+            flask_app._poller()
+
+
+def test_brief_scheduler_retries_next_tick_after_a_failed_dispatch():
+    """Mirrors _poller()'s fix for the brief's own schedule: `last` must
+    only advance when build+dispatch succeed."""
+    build_calls = {"n": 0}
+
+    def fake_build(hours):
+        build_calls["n"] += 1
+        if build_calls["n"] == 1:
+            raise RuntimeError("boom")
+        return {"fake": True}
+
+    times = iter([1000, 1010, 1010])
+    sleep_calls = {"n": 0}
+
+    def fake_sleep(seconds):
+        sleep_calls["n"] += 1
+        if sleep_calls["n"] >= 2:
+            raise _StopLoop
+
+    with patch.object(flask_app, "BRIEF_HOURS", 0), \
+         patch.object(flask_app.brief_data, "build", side_effect=fake_build), \
+         patch.object(flask_app.brief_data, "render_text", return_value="text"), \
+         patch.object(flask_app.notifier, "dispatch_brief"), \
+         patch.object(flask_app.time, "time", side_effect=times), \
+         patch.object(flask_app.time, "sleep", side_effect=fake_sleep):
+        with pytest.raises(_StopLoop):
+            flask_app._brief_scheduler()
+
+    assert build_calls["n"] == 2  # tick 1 fails, tick 2 retries immediately
+
+
+def test_brief_scheduler_waits_full_interval_after_a_successful_dispatch():
+    build_calls = {"n": 0}
+
+    def fake_build(hours):
+        build_calls["n"] += 1
+        return {"fake": True}
+
+    times = iter([5000, 5000, 5100])
+    sleep_calls = {"n": 0}
+
+    def fake_sleep(seconds):
+        sleep_calls["n"] += 1
+        if sleep_calls["n"] >= 2:
+            raise _StopLoop
+
+    with patch.object(flask_app, "BRIEF_HOURS", 1), \
+         patch.object(flask_app.brief_data, "build", side_effect=fake_build), \
+         patch.object(flask_app.brief_data, "render_text", return_value="text"), \
+         patch.object(flask_app.notifier, "dispatch_brief"), \
+         patch.object(flask_app.time, "time", side_effect=times), \
+         patch.object(flask_app.time, "sleep", side_effect=fake_sleep):
+        with pytest.raises(_StopLoop):
+            flask_app._brief_scheduler()
+
+    # tick 2 at t=5100 is not yet due (last=5000 + BRIEF_HOURS*3600=8600).
+    assert build_calls["n"] == 1
+
+
+@pytest.mark.parametrize("start_fn", ["_start_poller", "_start_brief_scheduler"])
+def test_start_functions_skip_launch_under_the_debug_reloaders_parent_process(start_fn):
+    """Flask's debug reloader runs this module in two processes; only the
+    active worker (WERKZEUG_RUN_MAIN=true) should actually launch the
+    background thread, or every source gets double the traffic silently."""
+    flask_app.app.debug = True
+    had_env = "WERKZEUG_RUN_MAIN" in os.environ
+    old_env = os.environ.pop("WERKZEUG_RUN_MAIN", None)
+    try:
+        with patch.object(flask_app.threading, "Thread") as mock_thread:
+            getattr(flask_app, start_fn)()
+        mock_thread.assert_not_called()
+    finally:
+        flask_app.app.debug = False
+        if had_env:
+            os.environ["WERKZEUG_RUN_MAIN"] = old_env
+
+
+@pytest.mark.parametrize("start_fn", ["_start_poller", "_start_brief_scheduler"])
+def test_start_functions_launch_in_the_reloaders_active_worker(start_fn):
+    flask_app.app.debug = True
+    os.environ["WERKZEUG_RUN_MAIN"] = "true"
+    try:
+        with patch.object(flask_app.threading, "Thread") as mock_thread:
+            getattr(flask_app, start_fn)()
+        mock_thread.assert_called_once()
+        mock_thread.return_value.start.assert_called_once()
+    finally:
+        flask_app.app.debug = False
+        os.environ.pop("WERKZEUG_RUN_MAIN", None)

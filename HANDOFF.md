@@ -11,7 +11,7 @@ Seven telescopes (Hubble, Jackson, Simons, Kepler, Holmdel, Reddington,
 Pasteur) run on live public data, no API keys. Kernel in `telescope/`, one
 domain pack per telescope in `observatories/`, one generic frontend driven
 entirely by telescope metadata. 139 kernel tests + 129 domain-pack tests +
-104 live tests + 33 zero-dependency Node tests covering every DOM-free
+112 live tests + 33 zero-dependency Node tests covering every DOM-free
 function in static/app.js (check the actual counts with `-q` / `node
 --test`, don't trust these numbers for long).
 
@@ -116,7 +116,7 @@ now — don't default back into any of them without a genuinely new angle
 re-checking, a section of the app never yet touched):
 
 1. **Extend test coverage.** Done for the entire Python codebase now,
-   Pasteur included — a `coverage.py --branch` pass over
+   including `app.py` itself — a `coverage.py --branch` pass over
    `telescope/crawl.py`, `telescope/graph.py`, and `observatories/pasteur.py`
    found and closed 7 real gaps (a non-anchor HTML tag, the parser-exception
    guard, a failed fetch's empty-edges case, a link discovered from two
@@ -129,10 +129,23 @@ re-checking, a section of the app never yet touched):
    at 98% (one line, `if url in visited: continue` inside `crawl()`,
    documented inline as unreachable — the enqueue-time dedup check already
    makes it impossible to trigger without breaking that invariant on
-   purpose). Every DOM-free function in `static/app.js` has real coverage
-   too (see below); the remaining Python gaps are deliberately-judged
-   omissions and the rendering/event-wiring half of app.js would need a
-   real DOM shim.
+   purpose). A follow-up sweep found `app.py` itself was at only 72% despite
+   its routes being well covered: `_poller()` and `_brief_scheduler()`
+   — the two background threads, each carrying a documented real bug fix
+   in its own docstring (`last` must only advance on success) — had zero
+   tests, since nothing in the existing Flask-route tests ever actually
+   starts them. Added mocked, no-network tests in `tests/test_live.py`
+   (fully deterministic — `time.sleep`/`time.time` patched to drive each
+   infinite loop a fixed number of ticks before a sentinel exception
+   escapes it) pinning both the retry-on-failure and wait-after-success
+   halves of that fix, plus the debug-reloader launch guards on
+   `_start_poller()`/`_start_brief_scheduler()`. `app.py` is now at 96% —
+   the only gap left is the unexecutable-without-a-live-server
+   `if __name__ == "__main__":` block, the same standard omission as any
+   other module's entry point. Every DOM-free function in `static/app.js`
+   has real coverage too (see below); the remaining Python gaps are
+   deliberately-judged omissions and the rendering/event-wiring half of
+   app.js would need a real DOM shim.
 2. **Verify a documentation file against reality.** Done for
    `TELESCOPES.md`, `README.md`, and every domain pack's own module
    docstring. `ROADMAP.md` is generated so it can't drift; `app.js`/
