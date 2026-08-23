@@ -10,7 +10,7 @@ anything.
 Seven telescopes (Hubble, Jackson, Simons, Kepler, Holmdel, Reddington,
 Pasteur) run on live public data, no API keys. Kernel in `telescope/`, one
 domain pack per telescope in `observatories/`, one generic frontend driven
-entirely by telescope metadata. 141 kernel tests + 129 domain-pack tests +
+entirely by telescope metadata. 143 kernel tests + 129 domain-pack tests +
 112 live tests + 33 zero-dependency Node tests covering every DOM-free
 function in static/app.js (check the actual counts with `-q` / `node
 --test`, don't trust these numbers for long).
@@ -188,9 +188,17 @@ re-checking, a section of the app never yet touched):
    Slack's webhook `text` field doesn't have this problem — plain
    "@everyone" renders as literal text there; real mentions need Slack's
    own bracketed syntax, which no external name field can produce by
-   accident. One pass so far; worth a re-check if a new output channel is
-   ever added, or if any existing one starts embedding raw external text
-   somewhere new.
+   accident. A follow-up pass checked the third and last channel,
+   `post_to_x()`: X's `create_tweet()` has no `allowed_mentions`-equivalent
+   opt-out at all, and a literal `@handle` in a posted tweet always pings
+   that real account if one exists — using the deployer's own authenticated
+   X identity, with npm scoped package names (`@angular`, `@babel`, ...)
+   making a real-handle collision plausible rather than purely theoretical.
+   Fixed with the standard technique for this exact gap: a zero-width space
+   right after every `@` (`_defang_mentions()`), which breaks mention
+   parsing while reading identically to a human. All three output channels
+   are now checked; worth a re-check if a new one is ever added, or if any
+   existing one starts embedding raw external text somewhere new.
 
 `static/app.js`'s pure/DOM-free logic has real coverage — `tests_js/`, using
 Node's built-in `node:test`/`node:vm` (already on the machine, zero npm

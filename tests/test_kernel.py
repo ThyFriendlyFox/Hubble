@@ -8,6 +8,7 @@ import os
 import sys
 import threading
 import time
+import types
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -1975,6 +1976,43 @@ def test_post_to_x_noops_without_credentials():
     even be present in an unconfigured install."""
     with patch.dict(os.environ, {}, clear=True):
         assert notifier.post_to_x({"headline": "x"}, _StubScope()) is False
+
+
+def test_defang_mentions_breaks_at_syntax_without_changing_visible_text():
+    assert notifier._defang_mentions("@realuser announces X") == (
+        "@\u200brealuser announces X"
+    )
+    # Reads identically to a human -- only an invisible character is added.
+    assert notifier._defang_mentions("no at signs here") == "no at signs here"
+
+
+def test_post_to_x_defangs_mentions_before_posting():
+    """Same untrusted-entity-name risk as Discord's @everyone/@here (any of
+    this fleet's seven telescopes can surface a name containing '@'), but
+    X's create_tweet() has no allowed_mentions-style opt-out -- a literal
+    '@realuser' would really ping that account using the deployer's own
+    authenticated identity. tweepy is optional and not installed in this
+    environment, so a fake module is injected into sys.modules rather than
+    adding a real dependency just to test this."""
+    created = {}
+
+    class FakeClient:
+        def __init__(self, **kw):
+            pass
+
+        def create_tweet(self, text):
+            created["text"] = text
+
+    fake_tweepy = types.SimpleNamespace(Client=FakeClient)
+    env = {"X_API_KEY": "k", "X_API_SECRET": "s",
+           "X_ACCESS_TOKEN": "t", "X_ACCESS_SECRET": "ts"}
+    with patch.dict(os.environ, env, clear=True), \
+         patch.dict(sys.modules, {"tweepy": fake_tweepy}):
+        assert notifier.post_to_x(
+            {"headline": "@realuser announces something"}, _StubScope()
+        ) is True
+    assert "@realuser" not in created["text"]
+    assert "@\u200brealuser" in created["text"]
 
 
 def test_dispatch_brief_always_logs_regardless_of_channel_config():

@@ -70,6 +70,18 @@ def post_to_slack(event, scope):
         return False
 
 
+def _defang_mentions(text):
+    """Same untrusted-entity-name risk as Discord's @everyone/@here, but
+    X's API has no allowed_mentions-style opt-out on create_tweet() -- a
+    literal '@handle' in a posted tweet always pings that real account if
+    it exists, using the deployer's own authenticated X identity to do it.
+    A zero-width space right after every '@' breaks mention parsing (it
+    requires '@' immediately followed by handle characters) while reading
+    identically to a human — the standard technique for relaying untrusted
+    text through a platform with no per-post mention suppression."""
+    return text.replace("@", "@\u200b")
+
+
 def post_to_x(event, scope):
     """Post to X / Twitter. Requires `pip install tweepy` + the four env vars."""
     if not os.environ.get("X_API_KEY"):
@@ -85,7 +97,7 @@ def post_to_x(event, scope):
             access_token=os.environ["X_ACCESS_TOKEN"],
             access_token_secret=os.environ["X_ACCESS_SECRET"],
         )
-        client.create_tweet(text=event["headline"][:280])
+        client.create_tweet(text=_defang_mentions(event["headline"][:280]))
         return True
     except Exception:
         return False
