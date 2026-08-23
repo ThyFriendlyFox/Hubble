@@ -217,8 +217,30 @@ re-checking, a section of the app never yet touched):
    own declared text columns (panels have no fixed shape, so no field name
    could be hardcoded). Verified live via real `KeyboardEvent`s (focus +
    Enter, focus + Space), not just reasoned about — confirmed on both the
-   main table and a panel (Jackson's CAPABILITY AREAS). One pass so far;
-   worth a re-check if a new custom control is ever added.
+   main table and a panel (Jackson's CAPABILITY AREAS). A follow-up pass
+   covered the one custom control left untouched: the score-breakdown
+   tooltip, wired only to `mousemove`/`mouseleave`, so a keyboard-only user
+   tabbing through the exact cells that trigger it (the score column, the
+   podium score) could never see it at all — the only place in the whole
+   dashboard showing a signal-by-signal breakdown of how a score was
+   computed. Fixed by adding `focusin`/`focusout` handlers alongside the
+   existing mouse ones (delegated the same way, since `focusin`/`focusout`
+   bubble like `mousemove` does, unlike plain `focus`/`blur`), positioning
+   from the focused element's own bounding rect instead of a cursor
+   position but reusing `positionTip()`'s viewport-clamping unchanged, plus
+   `role="tooltip"` on the tip element and `aria-describedby` on its two
+   semantically-relevant triggers (deliberately not the watch star too,
+   even though it shares the same mouse-hover trigger surface — its own
+   `aria-label` is about watching, not scoring, and describing it with
+   score-breakdown content would be a misleading screen-reader association
+   even though visually consistent for a sighted keyboard user). Verified
+   live with a real, CDP-injected click (a page-script `.focus()` call is
+   silently suppressed by the browser when the tab lacks real OS focus, a
+   testing-environment quirk this session hit and diagnosed rather than
+   mistook for a bug) plus a real `Tab` keypress moving focus row to row —
+   confirmed the tip's content correctly follows focus across rows, not
+   just appears once. Two passes so far; worth a re-check if a new custom
+   control is ever added.
 
 `static/app.js`'s pure/DOM-free logic has real coverage — `tests_js/`, using
 Node's built-in `node:test`/`node:vm` (already on the machine, zero npm

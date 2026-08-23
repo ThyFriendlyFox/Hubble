@@ -198,6 +198,21 @@ function hideTip() {
   tip.hidden = true;
 }
 
+// Shared by both trigger paths below: builds and shows the tip for `key`,
+// returning false (and hiding it) if that row has nothing to show. Neither
+// caller repositions here -- a mouse move and a keyboard focus land at
+// different coordinates, so each positions after this returns.
+function showTipFor(key) {
+  if (key === tipKey) return true;
+  const row = rowByKey(key);
+  if (!row || !row.score_breakdown) { hideTip(); return false; }
+  tipKey = key;
+  tip.innerHTML = buildTip(row);
+  tip.hidden = false;
+  requestAnimationFrame(() => tip.classList.add("show"));
+  return true;
+}
+
 function wireTipDelegation(container) {
   container.addEventListener("mousemove", (e) => {
     const el = e.target.closest("[data-key]");
@@ -205,17 +220,26 @@ function wireTipDelegation(container) {
       if (tipKey !== null) hideTip();
       return;
     }
-    if (el.dataset.key !== tipKey) {
-      const row = rowByKey(el.dataset.key);
-      if (!row || !row.score_breakdown) { hideTip(); return; }
-      tipKey = el.dataset.key;
-      tip.innerHTML = buildTip(row);
-      tip.hidden = false;
-      requestAnimationFrame(() => tip.classList.add("show"));
-    }
-    positionTip(e.clientX, e.clientY);
+    if (showTipFor(el.dataset.key)) positionTip(e.clientX, e.clientY);
   });
   container.addEventListener("mouseleave", hideTip);
+  // Mousemove has no keyboard equivalent, so a Tab-only user landing on the
+  // exact same [data-key] cells (the score column, the podium score) would
+  // otherwise never see this tooltip at all -- the only place in the whole
+  // dashboard that shows a signal-by-signal score breakdown. focusin/
+  // focusout (unlike plain focus/blur) bubble, so they delegate the same
+  // way mousemove/mouseleave already do above. Positioned from the
+  // focused element's own rect instead of a cursor position, reusing
+  // positionTip()'s existing viewport-clamping unchanged.
+  container.addEventListener("focusin", (e) => {
+    const el = e.target.closest("[data-key]");
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (showTipFor(el.dataset.key)) positionTip(r.left, r.bottom);
+  });
+  container.addEventListener("focusout", (e) => {
+    if (e.target.closest("[data-key]")) hideTip();
+  });
 }
 wireTipDelegation($("#rows"));
 wireTipDelegation($("#podium"));
@@ -566,7 +590,7 @@ function podium(rows) {
         : esc(r.name);
       return `<div class="pod rank-${i + 1}">
         <div class="pod-place">${place[i]}</div>
-        <div class="pod-score" data-key="${r.key}">${r.score}<span class="pod-score-x">/100</span></div>
+        <div class="pod-score" data-key="${r.key}" tabindex="0" aria-describedby="calc-tip">${r.score}<span class="pod-score-x">/100</span></div>
         <div class="pod-meter"><i style="width:${pct}%"></i></div>
         <div class="pod-name">${name}</div>
         <div class="pod-stats">${stats || "—"}</div>
@@ -598,7 +622,7 @@ function render() {
           }
           if (c.field === "score") {
             const pct = r.score ? (r.score / maxScore) * 100 : 0;
-            return `<td class="scorecell scorebar" data-key="${r.key}">${r.score ?? "—"}<i style="width:${pct}%"></i></td>`;
+            return `<td class="scorecell scorebar" data-key="${r.key}" tabindex="0" aria-describedby="calc-tip">${r.score ?? "—"}<i style="width:${pct}%"></i></td>`;
           }
           return `<td class="${c.fmt === "text" || c.fmt === "url" ? "left" : ""}">${cell(r, c)}</td>`;
         })
