@@ -6102,6 +6102,118 @@ PHASES = [
                        "checking was shallow."},
         ],
     },
+    {
+        "title": "PHASE 26 · A CVE CHECK, AND WHY IT DIDN'T NEED A FIX",
+        "status": "next",
+        "note": "A genuinely new kind of avenue, not a variation on one "
+                "already tried: checking whether the specific dependency "
+                "versions this project pins have a live, external "
+                "security advisory against them. This can't be answered "
+                "by reading the repo, no matter how carefully -- it needs "
+                "a real, current source. Found a real CVE, confirmed it "
+                "across independent advisories rather than trusting one "
+                "search summary, then did the harder and more honest "
+                "half of the work: checking whether it actually applies "
+                "to this app before treating it as urgent.",
+        "items": [
+            {"name": "Used live web search to check requirements.txt's "
+                     "pinned versions against real, current security "
+                     "advisories -- something no amount of static code "
+                     "reading could answer, and a tool this session "
+                     "hadn't loaded or used until now", "done": True,
+             "detail": "Checked installed versions directly (`pip show`) "
+                       "rather than trusting requirements.txt's own "
+                       "loose `>=` floors to reflect what's actually "
+                       "running: Flask 3.1.3, Werkzeug 3.1.8, requests "
+                       "2.34.2. Searched for known CVEs against exactly "
+                       "these versions rather than a generic 'Flask "
+                       "vulnerabilities' query, to avoid pulling in "
+                       "advisories for unrelated old version ranges."},
+            {"name": "Found CVE-2026-27205 and independently confirmed "
+                     "it was real rather than trusting a single AI-"
+                     "generated search summary, which can misattribute "
+                     "or invent CVE numbers/details", "done": True,
+             "detail": "The first search summarized a Flask 'Vary: "
+                       "Cookie header' vulnerability fixed in 3.1.3 -- ran "
+                       "a second, more targeted search for the specific "
+                       "CVE number by itself and got independent "
+                       "corroboration across multiple distinct security-"
+                       "advisory sources (SentinelOne, GitLab's own "
+                       "package advisories, IBM, Miggo, ResolvedSecurity, "
+                       "OffSeq, THREATINT), all describing the identical "
+                       "mechanism: sessions accessed only by key "
+                       "(Python's `in` operator or `len()`) without "
+                       "reading values or mutating state don't mark the "
+                       "session as accessed, so Flask fails to set Vary: "
+                       "Cookie, which can let a caching proxy serve one "
+                       "user's cached response to another. Affects "
+                       "Flask <=3.1.2, fixed in 3.1.3 -- confirmed real, "
+                       "not a hallucinated CVE ID."},
+            {"name": "Checked whether this app can actually be affected "
+                     "before treating a real CVE as an urgent finding -- "
+                     "grepped for the specific feature the vulnerability "
+                     "requires rather than assuming a generic Flask app "
+                     "is automatically exposed", "done": True,
+             "detail": "The vulnerability specifically requires the app "
+                       "to access flask.session in a way that doesn't "
+                       "trigger the normal Vary: Cookie logic -- grepped "
+                       "the entire codebase for `session`/`SECRET_KEY`/"
+                       "`secret_key` and found zero uses anywhere. This "
+                       "app has no login, no per-user state, no cookies "
+                       "at all -- it's a single-process, no-auth local "
+                       "dashboard by design (README's own \"no API keys "
+                       "... run just Hubble on a laptop\" framing). "
+                       "Without any session access, the specific failure "
+                       "mode this CVE describes cannot occur here "
+                       "regardless of which Flask version is installed. "
+                       "Confirmed installed Werkzeug (3.1.8) is also well "
+                       "clear of the separate CVEs found for it "
+                       "(CVE-2024-34069, CVE-2023-46136, CVE-2024-49767), "
+                       "all affecting versions below 3.0.6."},
+            {"name": "Bumped the requirements.txt floor anyway, framed "
+                     "honestly as free forward-looking hygiene rather "
+                     "than as fixing a live exploit that doesn't exist "
+                     "in this app today", "done": True,
+             "detail": "flask>=3.0 -> flask>=3.1.3, with a comment "
+                       "explaining both halves plainly: the CVE it "
+                       "excludes, and that this app isn't currently "
+                       "exploitable via it since it never touches "
+                       "sessions. The bump costs nothing (pip already "
+                       "resolves flask>=3.0 to a current release today) "
+                       "and closes the gap for good -- a future "
+                       "contributor adding a login feature, or anyone "
+                       "installing from a stale mirror/cache, gets the "
+                       "safe floor for free rather than inheriting a "
+                       "version range that happens to include a known-bad "
+                       "one. requests>=2.31 was left unchanged -- no CVE "
+                       "found against 2.34.2 -- and Werkzeug stays "
+                       "unpinned directly, since Flask 3.1.3's own "
+                       "declared dependency floor (werkzeug>=3.1.0) "
+                       "already clears every Werkzeug CVE found by a wide "
+                       "margin without this project needing to track it "
+                       "separately."},
+            {"name": "Verified the bump doesn't break anything -- a "
+                     "real pip install/pip check pass, not just eyeballing "
+                     "the version numbers -- then ran both fast suites",
+             "done": True,
+             "detail": "`pip install -r requirements.txt` against the "
+                       "existing venv resolved cleanly with every "
+                       "dependency already satisfying the new floor "
+                       "(Flask 3.1.3, Werkzeug 3.1.8 already installed), "
+                       "and `pip check` reported no broken requirements. "
+                       "272 Python tests and 33 JS tests unaffected -- "
+                       "this change touches no application code, only a "
+                       "version constraint."},
+            {"name": "Verified nothing else drifted: dev server and "
+                     "blocked-sources table reconfirmed", "done": True,
+             "detail": "Dev server confirmed healthy on its running port "
+                       "with all seven telescopes registered and zero "
+                       "load_errors, no restart needed. Re-probed all four "
+                       "historically-blocked sources (SAM.gov, Semantic "
+                       "Scholar, Jackson's SBIR, Holmdel's OpenAlex) -- no "
+                       "change from any prior finding."},
+        ],
+    },
 ]
 
 

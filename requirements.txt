@@ -1,2 +1,9 @@
-flask>=3.0
+# >=3.1.3, not just >=3.0: CVE-2026-27205 (Flask session access failing to
+# set Vary: Cookie in some cases, enabling cache poisoning behind a caching
+# proxy) affects 3.1.2 and below, fixed in 3.1.3. This app never touches
+# flask.session at all (grepped for it -- no session/SECRET_KEY usage
+# anywhere), so it isn't actually exploitable via this CVE today regardless
+# of version; the floor is bumped anyway since it's free and this app's own
+# session usage is a one-line decision away from changing that.
+flask>=3.1.3
 requests>=2.31

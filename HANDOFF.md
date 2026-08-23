@@ -109,7 +109,7 @@ registration requirement for this exact data, a ToS/legal judgment call, not
 a technical one — not mine to make unilaterally in an unattended loop.
 
 If all the named sources are still blocked (expect this), read `ROADMAP.md`
-for what's already done, then look for real, previously-unflagged gaps. Six
+for what's already done, then look for real, previously-unflagged gaps. Seven
 fallback avenues have each already had a full pass and are exhausted for
 now — don't default back into any of them without a genuinely new angle
 (new code that could have introduced new drift, a specific claim worth
@@ -365,6 +365,28 @@ re-checking, a section of the app never yet touched):
    input device, unlike a bare scripted `element.focus()` call. Seven passes
    so far; worth a re-check if a new custom control, color, animation, or
    top-level section is ever added.
+7. **Real-time dependency/CVE verification via live web search.** Every
+   other avenue reasons about this codebase's own code; this one checks
+   whether the *versions pinned in `requirements.txt`* have a live,
+   external advisory against them — something no amount of reading this
+   repo can answer, since it requires a genuinely current source (CVE
+   databases, vendor bulletins) rather than training-data knowledge that
+   may already be stale. Found CVE-2026-27205 (Flask session access
+   failing to set `Vary: Cookie` in some cases, enabling cache poisoning
+   behind a caching proxy) affects Flask ≤3.1.2, fixed in 3.1.3 — confirmed
+   across multiple independent advisories, not a single, possibly-
+   hallucinated source. Checked applicability before treating it as urgent:
+   this app never touches `flask.session` at all (no `session`/`SECRET_KEY`
+   usage anywhere), so it isn't actually exploitable via this CVE today
+   regardless of version. Bumped `requirements.txt`'s floor from `flask>=3.0`
+   to `flask>=3.1.3` anyway — free, forward-looking hygiene given the app's
+   own non-use of sessions is a one-line decision away from changing, not a
+   claim of a live vulnerability. `requests>=2.31` had no CVE found against
+   it; Werkzeug isn't pinned directly since Flask's own declared dependency
+   floor (`werkzeug>=3.1.0` as of 3.1.3) already clears every Werkzeug CVE
+   found, which affected versions below 3.0.6. One pass so far; worth a
+   re-check whenever a dependency is added or on a periodic cadence, since
+   new advisories can land against a pin that was clean when last checked.
 
 `static/app.js`'s pure/DOM-free logic has real coverage — `tests_js/`, using
 Node's built-in `node:test`/`node:vm` (already on the machine, zero npm
