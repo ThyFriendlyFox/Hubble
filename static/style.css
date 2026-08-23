@@ -297,6 +297,26 @@ td.name a:hover { text-decoration: underline; }
 .watch-cell:hover { color: var(--ink); }
 .watch-cell.on { color: var(--paper); }
 tbody tr.top1 .watch-cell.on { color: #000; }
+
+/* Unlike <button>/<a>/form controls, browsers give <td>/<th>/<b>/<span> no
+   default focus ring at all even once tabindex makes them focusable --
+   confirmed live, not assumed (a focused sort <th>'s own computed
+   outline-style was genuinely "none", nothing in this file was
+   suppressing it). Every custom-interactive element made keyboard-
+   operable needs one added explicitly, or a sighted keyboard user can
+   operate these with no way to see which one is about to activate.
+   :focus-visible (not :focus) so a mouse click doesn't also show a ring
+   these elements never had before -- keyboard-only, matching how
+   :hover already gives mouse users their own feedback above. */
+.watch-cell:focus-visible,
+thead th:focus-visible,
+.scorecell:focus-visible,
+.pod-score:focus-visible,
+.view-chip b:focus-visible,
+.view-chip .del:focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: -2px;
+}
 .feed-watched-toggle { margin: 10px 0 12px; }
 .feed-item.watched { border-left: 2px solid var(--paper); }
 .feed-item .wstar { color: var(--paper); margin-right: 2px; }

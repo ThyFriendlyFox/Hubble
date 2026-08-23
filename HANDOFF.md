@@ -239,8 +239,28 @@ re-checking, a section of the app never yet touched):
    testing-environment quirk this session hit and diagnosed rather than
    mistook for a bug) plus a real `Tab` keypress moving focus row to row —
    confirmed the tip's content correctly follows focus across rows, not
-   just appears once. Two passes so far; worth a re-check if a new custom
-   control is ever added.
+   just appears once. A third pass found the piece the first two left
+   incomplete: none of the six elements made keyboard-focusable across both
+   passes (`.watch-cell`, `thead th`, `.scorecell`, `.pod-score`,
+   `.view-chip b`, `.view-chip .del`) had any visible focus indicator —
+   confirmed live via computed style (`outline-style: none`) on a genuinely
+   Tab-focused sort header, not assumed. Browsers give `<button>`/`<a>`/form
+   controls a default focus ring automatically but not `<td>`/`<th>`/`<b>`/
+   `<span>` even with `tabindex`, so operability without visibility is a
+   real, distinct failure mode of its own — a sighted keyboard user could
+   now activate these but not see which one was about to activate. Fixed
+   with one shared `:focus-visible` rule (`outline: 2px solid var(--paper);
+   outline-offset: -2px`) — `:focus-visible` specifically, not `:focus`, so
+   a mouse click doesn't also show a ring these elements never had before,
+   matching how `:hover` already gives mouse users their own feedback.
+   Verified live with genuine keyboard `Tab` navigation (`element.matches(
+   ':focus-visible')` confirmed `true` with the exact intended computed
+   style) — a plain scripted `.focus()` call does not trigger
+   `:focus-visible` matching in real browsers regardless of the OS-focus
+   quirk noted above, a second, distinct testing-environment trap this
+   session had to route around correctly rather than let produce a false
+   negative. Three passes so far; worth a re-check if a new custom control
+   is ever added.
 
 `static/app.js`'s pure/DOM-free logic has real coverage — `tests_js/`, using
 Node's built-in `node:test`/`node:vm` (already on the machine, zero npm
